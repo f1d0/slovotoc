@@ -26,5 +26,12 @@ create policy "insert for everyone" on public.leaderboard
 create policy "update scores" on public.leaderboard
   for update using (true) with check (true);
 
+-- Přidáno později: hvězdy za úrovně a série denní výzvy.
+-- Hra funguje i bez těchto sloupců (klient se umí vrátit ke staršímu
+-- schématu), ale bez nich se hvězdy a série v žebříčku nezobrazí.
+alter table public.leaderboard
+  add column if not exists stars  int not null default 0 check (stars  between 0 and 10000),
+  add column if not exists streak int not null default 0 check (streak between 0 and 10000);
+
 -- Úklid testovacích řádků (spustit v SQL editoru, RLS se tam neuplatňuje):
 -- delete from public.leaderboard where name in ('TestBot', 'Filip', 'Anička');

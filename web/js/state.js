@@ -15,6 +15,8 @@ export function newPlayer(name, avatar) {
     levelIndex: 0,
     best: 0,            // highest level ever reached (leaderboard score)
     bonusTotal: 0,
+    stars: {},          // levelIndex -> 1..3
+    daily: null,        // { day, streak, best } for the daily challenge
     sawTip: false,
     cur: null,          // mid-level progress: { idx, found: [], hinted: [], bonus: [] }
     createdAt: Date.now(),

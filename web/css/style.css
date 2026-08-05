@@ -579,6 +579,63 @@ body {
 .new-player input::placeholder { color: rgba(255, 255, 255, 0.45); font-weight: 700; }
 .new-player .big-btn { margin-top: 0; width: auto; padding: 12px 22px; }
 
+/* ---------- stars & daily challenge ---------- */
+.stars {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 12px 0 2px;
+}
+.stars span {
+  font-size: 34px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.20);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.stars span.on {
+  color: var(--accent);
+  animation: star-pop 0.5s cubic-bezier(0.34, 1.6, 0.64, 1) both;
+}
+@keyframes star-pop {
+  0% { transform: scale(0) rotate(-40deg); opacity: 0; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+.daily-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 12px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 201, 60, 0.45);
+  border-radius: 16px;
+  background: rgba(255, 201, 60, 0.14);
+  color: #fff;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.daily-btn.done { border-color: rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.07); }
+.daily-btn em { font-style: normal; font-size: 24px; }
+.daily-btn b { display: block; font-size: 15px; font-weight: 900; }
+.daily-btn span { display: block; font-size: 12px; opacity: 0.8; }
+.daily-btn:active { transform: scale(0.98); }
+
+/* red dot on the trophy while today's challenge is unplayed */
+#btn-player { position: relative; }
+#btn-player.has-badge::after {
+  content: '';
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: #ff5c6c;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  animation: badge-pulse 1.8s ease-in-out infinite;
+}
+@keyframes badge-pulse { 50% { transform: scale(1.25); } }
+
 /* ---------- welcome / rules ---------- */
 .welcome { text-align: center; margin-bottom: 4px; }
 .welcome-logo {
@@ -637,7 +694,7 @@ body {
 .board { margin: 14px 0 4px; text-align: left; }
 .board-row {
   display: grid;
-  grid-template-columns: 30px 1fr 52px 40px 46px;
+  grid-template-columns: 26px 1fr 42px 34px 34px 30px;
   align-items: center;
   gap: 4px;
   padding: 8px 10px;

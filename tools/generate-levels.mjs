@@ -20,14 +20,15 @@ import { isClean, CZECH_RE } from './wordfilter.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORDLIST = process.env.WORDLIST ?? '/workspace/czech-wordlist/CZ-wordlist';
-const FREQLIST = process.env.FREQLIST ?? '/workspace/freqwords/content/2018/cs/cs_50k.txt';
+const FREQLIST = process.env.FREQLIST ?? '/workspace/freqwords/content/2018/cs/cs_full.txt';
 const HUNSPELL = process.env.HUNSPELL ?? '/workspace/cs_CZ.dic';
-const LEMMAS = process.env.LEMMAS ?? '/workspace/wikt-cs-lemmas.txt';
+const LEMMAS = process.env.LEMMAS ?? '/workspace/cs-lemmas.txt';
 const OUT = join(__dirname, '..', 'web', 'data', 'levels.json');
 
 const MIN_LEN = 3;
-const MAX_GRID = 11;           // max bounding-box dimension (mobile rendering)
-const MIN_FREQ_COUNT = 400;    // min subtitle-corpus count for target words
+const MAX_GRID = 11;           // default max bounding-box dimension (mobile rendering)
+const MIN_FREQ_COUNT = 150;    // min subtitle-corpus count for target words
+const MAX_SHORT_PER_LEVEL = 3; // at most this many 3-letter answers per grid
 
 // Frequent oblique forms of names/places (nominatives are caught via the
 // hunspell capitalization check) and subtitle noise that slips through.
@@ -45,7 +46,10 @@ const TARGET_BLOCKLIST = new Set([
   'look', 'hot', 'stone', 'salt', 'net', 'star', 'jam', 'bat', 'pako', 'trip',
   'dne', // mistagged as a headword in the Wiktionary extraction
   'mne', 'mně', 'tebe', 'tobě', 'sebe', 'sobě', // pronoun case forms
-  'love', 'péro', 'osle', 'prso',
+  'love', 'péro', 'osle', 'prso', 'kol', 'jsi', 'jest',
+  // obscure or non-headword leftovers that slip through the frequency filter
+  'kon', 'kale', 'lat', 'kel', 'atol', 'kalo', 'kolt', 'katr', 'ethan',
+  'talon', 'stěr', 'potěr', 'kra', 'lín', 'sto', 'tur', 'lka', 'nes',
 ]);
 
 // Hand-picked friendly base words tried first in each tier, so early levels
@@ -63,6 +67,9 @@ const SEED_BASES = {
       'hvězda', 'zelená', 'stolek', 'obloha', 'koleno', 'jeskyně',
       'vlaštovka', 'lopata', 'strom', 'kominík', 'nálada', 'stanice',
       'sekera', 'takový', 'ostrov', 'nemoce', 'stavba', 'sobota'],
+  8: ['nemocnice', 'zahradník', 'kominíci', 'poledne', 'rybníky', 'sportovní',
+      'divadlo', 'kalendář', 'lyžování', 'plavecký', 'obrázek', 'malování',
+      'poklidný', 'sluneční', 'kytarový', 'nádraží', 'palivo', 'stromek'],
   7: ['zahrada', 'letadlo', 'pohádka', 'kamarád', 'nákladní', 'stavení',
       'kolotoč', 'návštěva', 'lednice', 'nedělat', 'stodola', 'saláma',
       'dovolená', 'polévka', 'nástroj', 'stránka', 'kapesní', 'plavání'],
@@ -167,9 +174,10 @@ function subwordsOf(base) {
 // Standard rules: new words must cross an existing word on a matching
 // letter, may not run adjacent to parallel words, and cells before/after a
 // word must be empty.
-function tryLayout(words) {
+function tryLayout(words, maxGrid = MAX_GRID) {
   // words: array, first one is placed at origin horizontally.
   const cells = new Map(); // "x,y" -> char
+  const dirs = new Map();  // "x,y" -> Set of directions running through it
   const placed = [];
   const key = (x, y) => x + ',' + y;
   const get = (x, y) => cells.get(key(x, y));
@@ -185,6 +193,10 @@ function tryLayout(words) {
       const existing = get(cx, cy);
       if (existing !== undefined) {
         if (existing !== word[i]) return false;
+        // Two words must never run along the same line: otherwise a longer
+        // word simply swallows a shorter one (JEN inside JENŽ) and the grid
+        // shows one slot that accepts two different answers.
+        if (dirs.get(key(cx, cy))?.has(dh ? 'h' : 'v')) return false;
         crossings++;
       } else {
         // side neighbours (perpendicular) must be empty
@@ -216,7 +228,12 @@ function tryLayout(words) {
 
   function place(word, x, y, dh) {
     const dx = dh ? 1 : 0, dy = dh ? 0 : 1;
-    for (let i = 0; i < word.length; i++) cells.set(key(x + dx * i, y + dy * i), word[i]);
+    for (let i = 0; i < word.length; i++) {
+      const k = key(x + dx * i, y + dy * i);
+      cells.set(k, word[i]);
+      if (!dirs.has(k)) dirs.set(k, new Set());
+      dirs.get(k).add(dh ? 'h' : 'v');
+    }
     placed.push({ w: word, x, y, d: dh ? 'h' : 'v' });
   }
 
@@ -244,7 +261,7 @@ function tryLayout(words) {
           const dx = dh ? 1 : 0, dy = dh ? 0 : 1;
           for (let k2 = 0; k2 < word.length; k2++) extra.push([x + dx * k2, y + dy * k2]);
           const b = bbox(extra);
-          if (b.w > MAX_GRID || b.h > MAX_GRID) continue;
+          if (b.w > maxGrid || b.h > maxGrid) continue;
           const squareness = Math.abs(b.w - b.h);
           const score = crossings * 100 - (b.w * b.h) - squareness * 3 + rnd() * 8;
           if (!best || score > best.score) best = { x, y, dh, score };
@@ -263,13 +280,13 @@ function tryLayout(words) {
   };
 }
 
-function bestLayout(mustHave, extras, wanted, tries = 40) {
+function bestLayout(mustHave, extras, wanted, tries = 40, maxGrid = MAX_GRID) {
   // mustHave: words that should all appear (base word first).
   // extras: ordered fallback candidates to reach `wanted` words.
   let best = null;
   for (let t = 0; t < tries; t++) {
     const order = [mustHave[0], ...shuffled(mustHave.slice(1))];
-    const lay = tryLayout([...order, ...shuffled(extras)].slice(0, wanted + 4));
+    const lay = tryLayout([...order, ...shuffled(extras)].slice(0, wanted + 6), maxGrid);
     const n = lay.placed.length;
     const area = lay.w * lay.h;
     const score = Math.min(n, wanted) * 1000 - area - Math.abs(lay.w - lay.h) * 5;
@@ -281,10 +298,13 @@ function bestLayout(mustHave, extras, wanted, tries = 40) {
 
 // ---------- base word selection & level construction ----------
 const TIERS = [
-  { count: 20, baseLen: 4, words: [3, 4] },   // levels 1–20
-  { count: 30, baseLen: 5, words: [4, 5] },   // 21–50
-  { count: 50, baseLen: 6, words: [5, 7] },   // 51–100
-  { count: 60, baseLen: 7, words: [6, 9] },   // 101–160
+  // A much steeper ramp: players reported 4-letter wheels still showing up
+  // around level 15, which is far too easy for adults.
+  { count: 6,   baseLen: 4, words: [3, 4],   maxGrid: 9,  tries: 40 },
+  { count: 14,  baseLen: 5, words: [4, 6],   maxGrid: 9,  tries: 45 },
+  { count: 30,  baseLen: 6, words: [6, 8],   maxGrid: 10, tries: 55 },
+  { count: 70,  baseLen: 7, words: [8, 10],  maxGrid: 11, tries: 70 },
+  { count: 120, baseLen: 8, words: [9, 12],  maxGrid: 12, tries: 90 },
 ];
 
 // Cesta po českých památkách a zajímavých místech. Menší města jsou
@@ -306,13 +326,21 @@ const PACKS = [
   { slug: 'hluboka', name: 'Hluboká nad Vltavou', fact: 'Bílý zámek v novogotickém stylu podle anglického vzoru.' },
   { slug: 'lednice', name: 'Lednice', fact: 'Zámek s parkem a minaretem, součást Lednicko-valtického areálu.' },
   { slug: 'snezka', name: 'Sněžka', fact: 'Nejvyšší hora Česka, 1603 metrů nad mořem.' },
+  { slug: 'pravcicka-brana', name: 'Pravčická brána', fact: 'Největší přirozená skalní brána v Evropě, symbol Českého Švýcarska.' },
+  { slug: 'trosky', name: 'Trosky', fact: 'Dvě čedičové věže Baba a Panna, které trčí nad Českým rájem.' },
+  { slug: 'jested', name: 'Ještěd', fact: 'Horský hotel a vysílač ve tvaru kužele nad Libercem.' },
+  { slug: 'spilberk', name: 'Špilberk', fact: 'Hrad a pevnost nad Brnem, kdysi obávaná věznice.' },
+  { slug: 'karlovy-vary', name: 'Karlovy Vary', fact: 'Lázně s horkými prameny; Vřídlo tryská do výšky přes deset metrů.' },
+  { slug: 'olomouc', name: 'Olomouc', fact: 'Sloup Nejsvětější Trojice na náměstí je památkou UNESCO.' },
+  { slug: 'pernstejn', name: 'Pernštejn', fact: 'Gotický hrad zvaný mramorový, který nebyl nikdy dobyt.' },
+  { slug: 'litomysl', name: 'Litomyšl', fact: 'Renesanční zámek na seznamu UNESCO a rodiště Bedřicha Smetany.' },
 ];
 const PACK_SIZE = 10;
 
 // Candidate base words per length: hand-picked seeds first (validated like
 // any other candidate), then the rest of the pool, most common first.
 const baseCandidates = new Map();
-for (const len of [4, 5, 6, 7]) {
+for (const len of [4, 5, 6, 7, 8]) {
   const seeds = (SEED_BASES[len] ?? []).filter(w => w.length === len && targets.has(w));
   const cands = [...targets]
     .filter(w => w.length === len && !seeds.includes(w))
@@ -328,6 +356,14 @@ for (const len of [4, 5, 6, 7]) {
 
 const usedBases = new Set();       // letter-multiset signatures already used
 const usedBaseWords = new Set();
+// How often each word has already been used as a crossword answer. Without
+// this, frequency-sorted picking puts "tak"/"pot"/"sto" in dozens of levels
+// and the puzzles start feeling identical.
+const usedCount = new Map();
+// Dense grids can't avoid reusing three-letter connectors, but a repeated
+// five-letter answer is what makes levels feel identical — so the cap is
+// tighter the longer (and more memorable) the word is.
+const reuseCap = w => (w.length <= 3 ? 12 : w.length === 4 ? 6 : 4);
 const levels = [];
 const allTargetWordsUsed = new Set();
 
@@ -345,8 +381,11 @@ for (const tier of TIERS) {
 
     const subs = subwordsOf(base);
     const targetSubs = subs
-      .filter(w => targets.has(w) && w !== base)
-      .sort((a, b) => (freq.get(b) ?? 0) - (freq.get(a) ?? 0));
+      .filter(w => targets.has(w) && w !== base && (usedCount.get(w) ?? 0) < reuseCap(w))
+      // fresh words first, then the most common ones
+      .sort((a, b) =>
+        (usedCount.get(a) ?? 0) - (usedCount.get(b) ?? 0) ||
+        (freq.get(b) ?? 0) - (freq.get(a) ?? 0));
 
     const wanted = tier.words[0] + Math.floor(rnd() * (tier.words[1] - tier.words[0] + 1));
     if (targetSubs.length < wanted - 1) continue;
@@ -359,16 +398,25 @@ for (const tier of TIERS) {
     }
     const mixed = [];
     let added = true;
+    let shorts = 0;
     while (added) {
       added = false;
       for (const len of [...byLen.keys()].sort((a, b) => b - a)) {
         const bucket = byLen.get(len);
-        if (bucket.length) { mixed.push(bucket.shift()); added = true; }
+        if (!bucket.length) continue;
+        if (len <= 3 && shorts >= MAX_SHORT_PER_LEVEL) continue;
+        if (len <= 3) shorts++;
+        mixed.push(bucket.shift());
+        added = true;
       }
     }
 
-    const lay = bestLayout([base, ...mixed.slice(0, wanted + 2)], mixed.slice(wanted + 2, wanted + 10), wanted);
-    if (!lay || lay.placed.length < Math.max(3, wanted - 1)) continue;
+    const lay = bestLayout(
+      [base, ...mixed.slice(0, wanted + 2)],
+      mixed.slice(wanted + 2, wanted + 14),
+      wanted, tier.tries ?? 40, tier.maxGrid ?? MAX_GRID
+    );
+    if (!lay || lay.placed.length < Math.max(3, wanted - 2)) continue;
     if (!lay.placed.some(p => p.w === base)) continue;
 
     const placedSet = new Set(lay.placed.map(p => p.w));
@@ -380,7 +428,10 @@ for (const tier of TIERS) {
       bonus,
       gw: lay.w, gh: lay.h,
     });
-    for (const w of placedSet) allTargetWordsUsed.add(w);
+    for (const w of placedSet) {
+      allTargetWordsUsed.add(w);
+      usedCount.set(w, (usedCount.get(w) ?? 0) + 1);
+    }
     usedBases.add(sig);
     usedBaseWords.add(base);
     made++;

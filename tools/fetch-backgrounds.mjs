@@ -38,6 +38,14 @@ const WANTED = {
   'hluboka': { articles: ['Hluboká (zámek)', 'Hluboká nad Vltavou'], terms: ['Hluboka castle', 'Zámek Hluboká nad Vltavou pohled'] },
   'lednice': { articles: ['Lednice (zámek)', 'Lednice'], terms: ['Zámek Lednice'] },
   'snezka': { articles: ['Sněžka'], terms: ['Sněžka vrchol léto', 'Snezka summer'] },
+  'pravcicka-brana': { articles: ['Pravčická brána'], terms: ['Pravčická brána'] },
+  'trosky': { articles: ['Trosky (hrad)', 'Trosky'], terms: ['Hrad Trosky'] },
+  'jested': { articles: ['Ještěd'], terms: ['Ještěd vysílač hotel'] },
+  'spilberk': { articles: ['Špilberk'], terms: ['Hrad Špilberk Brno'] },
+  'karlovy-vary': { articles: ['Karlovy Vary'], terms: ['Karlovy Vary kolonáda'] },
+  'olomouc': { articles: ['Sloup Nejsvětější Trojice', 'Olomouc'], terms: ['Olomouc Horní náměstí'] },
+  'pernstejn': { articles: ['Pernštejn (hrad)', 'Pernštejn'], terms: ['Hrad Pernštejn'] },
+  'litomysl': { articles: ['Zámek Litomyšl', 'Litomyšl'], terms: ['Zámek Litomyšl'] },
 };
 
 const API = 'https://commons.wikimedia.org/w/api.php';

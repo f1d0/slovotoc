@@ -22,8 +22,13 @@ function timeoutSignal() {
   return c.signal;
 }
 
-export async function pushScore({ deviceId, name, avatar, levels, bonus, coins }) {
-  const row = {
+// `stars` and `streak` were added after the first release. If the database
+// hasn't got those columns yet the game keeps working on the older schema
+// instead of failing to sync at all.
+let extendedSchema = true;
+
+export async function pushScore({ deviceId, name, avatar, levels, bonus, coins, stars, streak }) {
+  const base = {
     device_id: deviceId,
     name,
     avatar,
@@ -32,20 +37,39 @@ export async function pushScore({ deviceId, name, avatar, levels, bonus, coins }
     coins,
     updated_at: new Date().toISOString(),
   };
-  const res = await fetch(`${URL}?on_conflict=device_id,name`, {
-    method: 'POST',
-    headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates' },
-    body: JSON.stringify([row]),
-    signal: timeoutSignal(),
-  });
+  const send = async withExtras => {
+    const row = withExtras ? { ...base, stars, streak } : base;
+    return fetch(`${URL}?on_conflict=device_id,name`, {
+      method: 'POST',
+      headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify([row]),
+      signal: timeoutSignal(),
+    });
+  };
+
+  let res = await send(extendedSchema);
+  if (!res.ok && extendedSchema && res.status === 400) {
+    extendedSchema = false; // unknown column – fall back for this session
+    res = await send(false);
+  }
   if (!res.ok) throw new Error(`pushScore ${res.status}`);
 }
 
 export async function fetchTop(limit = 100) {
-  const res = await fetch(
-    `${URL}?select=name,avatar,levels,bonus,coins,device_id&order=levels.desc,bonus.desc,coins.desc&limit=${limit}`,
+  const cols = extendedSchema
+    ? 'name,avatar,levels,bonus,coins,stars,streak,device_id'
+    : 'name,avatar,levels,bonus,coins,device_id';
+  let res = await fetch(
+    `${URL}?select=${cols}&order=levels.desc,bonus.desc,coins.desc&limit=${limit}`,
     { headers: HEADERS, signal: timeoutSignal() }
   );
+  if (!res.ok && extendedSchema && res.status === 400) {
+    extendedSchema = false;
+    res = await fetch(
+      `${URL}?select=name,avatar,levels,bonus,coins,device_id&order=levels.desc,bonus.desc,coins.desc&limit=${limit}`,
+      { headers: HEADERS, signal: timeoutSignal() }
+    );
+  }
   if (!res.ok) throw new Error(`fetchTop ${res.status}`);
   return res.json();
 }

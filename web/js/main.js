@@ -16,6 +16,8 @@ const LEVEL_REWARD_BASE = 10;
 const LEVEL_REWARD_PER_WORD = 2;
 const BONUS_MILESTONE = 10;      // every N bonus words…
 const BONUS_MILESTONE_COINS = 15; // …pay this many coins
+const STAR3_BONUS_WORDS = 3;     // bonus words needed for the third star
+const DAILY_REWARD = 40;         // coins for finishing the daily challenge
 const REPO_URL = 'https://github.com/f1d0/wowczechversion';
 
 // one gradient theme per pack (cycled if there are more packs)
@@ -71,6 +73,9 @@ let busy = false;           // block input during transitions
 let hammerArmed = false;
 let toastTimer = null;
 let curPack = null;         // pack the current level belongs to
+let levelIdx = 0;           // index of the level on screen (differs in daily mode)
+let dailyMode = false;      // playing the daily challenge, not the campaign
+let usedHint = false;       // any hint used on the current level (star rule)
 let lastWord = '';          // last submitted word (for reporting)
 let lastWordAccepted = false;
 let reportTimer = null;
@@ -136,6 +141,7 @@ function applyTheme(packIdx, pack) {
 
 function persist() {
   if (!player) return;
+  if (dailyMode) { saveRoot(root); return; } // daily progress isn't campaign progress
   player.cur = {
     idx: player.levelIndex,
     found: [...found],
@@ -198,15 +204,18 @@ function flyLetters(word, targets, { gold = false, onDone } = {}) {
 
 // ---------- level lifecycle ----------
 
-function loadLevel(restore = false) {
-  const { pack, packIdx, inPack } = packOf(player.levelIndex);
-  level = LEVELS[player.levelIndex];
+function loadLevel(restore = false, opts = {}) {
+  dailyMode = !!opts.daily;
+  levelIdx = dailyMode ? opts.index : player.levelIndex;
+  const { pack, packIdx, inPack } = packOf(levelIdx);
+  level = LEVELS[levelIdx];
   curPack = pack;
+  usedHint = false;
   applyTheme(packIdx, pack);
 
-  els.packName.textContent = pack.name;
-  els.levelLabel.textContent = `Úroveň ${player.levelIndex + 1}`;
-  els.progressFill.style.width = `${(inPack / pack.levels.length) * 100}%`;
+  els.packName.textContent = dailyMode ? '📅 Denní výzva' : pack.name;
+  els.levelLabel.textContent = dailyMode ? todayLabel() : `Úroveň ${levelIdx + 1}`;
+  els.progressFill.style.width = dailyMode ? '100%' : `${(inPack / pack.levels.length) * 100}%`;
 
   found = new Set();
   foundBonus = new Set();
@@ -220,7 +229,7 @@ function loadLevel(restore = false) {
   wheel.setLetters([...level.letters]);
   wheel.setEnabled(true);
 
-  if (restore && player.cur && player.cur.idx === player.levelIndex) {
+  if (restore && !dailyMode && player.cur && player.cur.idx === player.levelIndex) {
     for (const w of player.cur.found) {
       found.add(w);
       for (const k of grid.wordCells.get(w) || []) grid.reveal(k, { silent: true });
@@ -388,6 +397,7 @@ function useBulb() {
   if (player.coins < BULB_COST) { toast('Nedostatek mincí 🙁'); return; }
   const keys = grid.unrevealedKeys();
   if (!keys.length) return;
+  usedHint = true;
   setCoins(player.coins - BULB_COST);
   const k = keys[Math.floor(Math.random() * keys.length)];
   hintReveal(k);
@@ -409,6 +419,7 @@ els.grid.addEventListener('click', e => {
   hammerArmed = false;
   els.hammer.classList.remove('armed');
   grid.setPickMode(false);
+  usedHint = true;
   setCoins(player.coins - HAMMER_COST);
   hintReveal(cell.dataset.k);
 });
@@ -429,11 +440,107 @@ function hideOverlay() {
   els.overlay.style.pointerEvents = 'none';
 }
 
+// ---------- daily challenge ----------
+
+function todayKey(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function todayLabel(d = new Date()) {
+  return `${d.getDate()}. ${d.getMonth() + 1}.`;
+}
+function yesterdayKey() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return todayKey(d);
+}
+// Same puzzle for everybody on a given day, without needing a server.
+function dailyIndex(key = todayKey()) {
+  let h = 2166136261;
+  for (const ch of key) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  return Math.abs(h) % LEVELS.length;
+}
+function dailyDone() {
+  return player?.daily?.day === todayKey();
+}
+
+function startDaily() {
+  hideOverlay();
+  loadLevel(false, { daily: true, index: dailyIndex() });
+  toast('📅 Denní výzva — stejná hádanka pro všechny!', 2600);
+}
+
+function finishDaily() {
+  const d = player.daily ?? { day: null, streak: 0 };
+  const continued = d.day === yesterdayKey();
+  player.daily = {
+    day: todayKey(),
+    streak: continued ? (d.streak ?? 0) + 1 : 1,
+  };
+  setCoins(player.coins + DAILY_REWARD, true);
+  saveRoot(root);
+  syncScore(true);
+  const s = player.daily.streak;
+  showOverlay(`
+    <h1>📅 Denní výzva hotová!</h1>
+    <p>Dnešní hádanku máš za sebou.</p>
+    <div class="reward">+${DAILY_REWARD} ${coinSvg()}</div>
+    <p class="fact">🔥 Série: <b>${s} ${s === 1 ? 'den' : s < 5 ? 'dny' : 'dní'}</b> v řadě${
+      !continued && d.day ? ' — předchozí série se přerušila' : ''}</p>
+    <button class="big-btn" id="ov-back">Zpět do hry</button>
+  `);
+  $('#ov-back').onclick = () => {
+    hideOverlay();
+    updateDailyBadge();
+    loadLevel(true);
+  };
+}
+
+function updateDailyBadge() {
+  els.player.classList.toggle('has-badge', !dailyDone());
+}
+
+// ---------- stars ----------
+
+// Small levels can offer fewer than three bonus words, so the third star
+// asks for all of them rather than an impossible number.
+function star3Need() {
+  return Math.min(STAR3_BONUS_WORDS, level.bonus.length);
+}
+
+function starsEarned() {
+  if (usedHint) return 1;
+  return foundBonus.size >= star3Need() ? 3 : 2;
+}
+
+function starRow(n) {
+  return `<div class="stars">${[1, 2, 3].map(i =>
+    `<span class="${i <= n ? 'on' : ''}" style="animation-delay:${i * 0.18}s">★</span>`).join('')}</div>`;
+}
+
+function starHint(n) {
+  if (n >= 3) return 'Bez nápovědy a s bonusovými slovy — perfektní!';
+  const need = star3Need();
+  if (n === 2) return `Bez nápovědy! Na třetí hvězdu chybí ${need - foundBonus.size} z ${need} bonusových slov.`;
+  return 'Použil jsi nápovědu. Bez ní jsou hvězdy dvě, s bonusovými slovy tři.';
+}
+
+function totalStars(p) {
+  return Object.values(p.stars ?? {}).reduce((a, b) => a + b, 0);
+}
+
 function levelComplete() {
   busy = true;
   wheel.setEnabled(false);
+  if (dailyMode) return setTimeout(() => { sndFanfare(); confettiBurst(els.confetti); finishDaily(); }, 700);
+
   const wordsN = level.words.length;
-  const reward = LEVEL_REWARD_BASE + LEVEL_REWARD_PER_WORD * wordsN;
+  const stars = starsEarned();
+  const prevStars = player.stars?.[levelIdx] ?? 0;
+  if (stars > prevStars) {
+    player.stars = player.stars ?? {};
+    player.stars[levelIdx] = stars;
+  }
+  const reward = LEVEL_REWARD_BASE + LEVEL_REWARD_PER_WORD * wordsN + (stars - 1) * 5;
   const { pack, inPack } = packOf(player.levelIndex);
   const lastInPack = inPack === pack.levels.length - 1;
   const lastLevel = player.levelIndex === LEVELS.length - 1;
@@ -484,6 +591,8 @@ function levelComplete() {
            <p>Čeká tě: <b>${esc(nextPackName)}</b></p>
            ${nextPackFact ? `<p class="fact">📍 ${esc(nextPackFact)}</p>` : ''}`
         : `<h1>Výborně!</h1><p>Úroveň ${player.levelIndex} je hotová.</p>`}
+      ${starRow(stars)}
+      <p style="font-size:12.5px;opacity:0.8">${starHint(stars)}</p>
       <div class="reward">+${reward} ${coinSvg()}</div>
       <button class="big-btn" id="ov-next">Další úroveň</button>
     `);
@@ -527,6 +636,8 @@ function syncScore(immediate = false) {
     levels: player.best,
     bonus: player.bonusTotal,
     coins: player.coins,
+    stars: totalStars(player),
+    streak: player.daily?.streak ?? 0,
   }).catch(() => { /* offline – next sync will catch up */ });
   if (immediate) return doPush();
   syncTimer = setTimeout(doPush, 2500);
@@ -544,6 +655,8 @@ function localRows() {
     levels: bestOf(p),
     bonus: p.bonusTotal,
     coins: p.coins,
+    stars: totalStars(p),
+    streak: p.daily?.streak ?? 0,
     device_id: root.deviceId,
   }));
 }
@@ -558,25 +671,34 @@ function mergeLocal(rows) {
 
 function renderBoard(rows, note) {
   const medals = ['🥇', '🥈', '🥉'];
-  const sorted = rows.sort((a, b) => b.levels - a.levels || b.bonus - a.bonus || b.coins - a.coins);
+  const sorted = rows.sort((a, b) =>
+    b.levels - a.levels || (b.stars ?? 0) - (a.stars ?? 0) || b.bonus - a.bonus || b.coins - a.coins);
   const box = $('#board-box');
   if (!box) return;
   box.innerHTML = `
     <div class="board">
-      <div class="board-row board-head"><i></i><b>Hráč</b><span>Úrovně</span><span>⭐</span><span>🪙</span></div>
+      <div class="board-row board-head"><i></i><b>Hráč</b><span>Úrovně</span><span>★</span><span>⭐</span><span>🔥</span></div>
       ${sorted.map((r, i) => `
         <div class="board-row ${r.device_id === root.deviceId && r.name === player?.name ? 'me' : ''}">
           <i>${medals[i] ?? i + 1 + '.'}</i>
           <b>${r.avatar ?? ''} ${esc(r.name)}</b>
-          <span>${r.levels}</span><span>${r.bonus}</span><span>${r.coins}</span>
+          <span>${r.levels}</span><span>${r.stars ?? 0}</span><span>${r.bonus}</span><span>${r.streak ?? 0}</span>
         </div>`).join('')}
     </div>
-    <p style="font-size:12px;opacity:0.7">${note}</p>`;
+    <p style="font-size:12px;opacity:0.7">${note}<br>
+      <b>Úrovně</b> · <b>★</b> hvězdy · <b>⭐</b> bonusová slova · <b>🔥</b> denní série</p>`;
 }
 
 async function showLeaderboard() {
+  const done = dailyDone();
   showOverlay(`
     <h2>🏆 Žebříček</h2>
+    <button class="daily-btn ${done ? 'done' : ''}" id="ov-daily">
+      <em>📅</em>
+      <div><b>Denní výzva</b><span>${done
+        ? `Dnes hotovo ✓ · série 🔥 ${player.daily?.streak ?? 0}`
+        : 'Stejná hádanka pro všechny · +' + DAILY_REWARD + ' mincí'}</span></div>
+    </button>
     <div id="board-box"><p style="opacity:0.7">Načítám žebříček…</p></div>
     <button class="big-btn" id="ov-switch">Vyměnit hráče</button>
     <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
@@ -585,6 +707,10 @@ async function showLeaderboard() {
   $('#ov-switch').onclick = () => showPlayerPicker();
   $('#ov-close').onclick = hideOverlay;
   $('#ov-about').onclick = showAbout;
+  $('#ov-daily').onclick = () => {
+    if (dailyDone()) { toast('Dnešní výzvu už máš hotovou 🎉 Vrať se zítra!'); return; }
+    startDaily();
+  };
   syncScore(true); // fire in parallel; local rows are merged in below anyway
   try {
     const rows = await fetchTop();
@@ -643,6 +769,7 @@ function startAs(name) {
   } else {
     loadLevel(true);
   }
+  updateDailyBadge();
 }
 
 const LOGO = `
@@ -662,7 +789,9 @@ const RULES = [
   ['🧩', 'Vyplň křížovku', 'Když slovo v křížovce je, jeho písmena vlétnou do mřížky. Úroveň končí, jakmile je mřížka celá plná.'],
   ['⭐', 'Bonusová slova', 'Najdeš-li platné české slovo, které v křížovce není, počítá se jako bonus. Za každých 10 bonusů dostaneš mince.'],
   ['💡', 'Nápovědy', 'Žárovka (25 mincí) odkryje náhodné písmeno, kladivo (60 mincí) políčko, které si vybereš. Mince získáváš za dokončené úrovně.'],
-  ['🏆', 'Žebříček', 'Hraješ o nejvyšší dosaženou úroveň. Žebříček je společný pro všechny kamarády.'],
+  ['★', 'Tři hvězdy', 'Za dokončení máš hvězdu, bez použití nápovědy dvě, a když k tomu najdeš tři bonusová slova (u malých úrovní všechna), máš všechny tři.'],
+  ['📅', 'Denní výzva', 'Každý den jedna hádanka — stejná pro všechny. Za dokončení jsou mince a roste ti série 🔥.'],
+  ['🏆', 'Žebříček', 'Hraješ o nejvyšší úroveň, pak o hvězdy. Žebříček je společný pro všechny kamarády.'],
   ['⚑', 'Nesedí ti slovo?', 'Tlačítkem vedle slova ho můžeš nahlásit — hra se díky tomu zlepšuje.'],
 ];
 
