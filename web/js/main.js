@@ -582,7 +582,7 @@ async function showLeaderboard() {
     <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
     <button class="ghost-btn" id="ov-about">ℹ️ O hře a fotkách</button>
   `);
-  $('#ov-switch').onclick = showPlayerPicker;
+  $('#ov-switch').onclick = () => showPlayerPicker();
   $('#ov-close').onclick = hideOverlay;
   $('#ov-about').onclick = showAbout;
   syncScore(true); // fire in parallel; local rows are merged in below anyway
@@ -604,11 +604,13 @@ async function showAbout() {
     <p style="font-size:13px">Slova pocházejí z českých slovníků
        (Wikislovník, hunspell cs_CZ). Našel jsi chybné slovo? Použij
        tlačítko ⚑ vedle slova.</p>
+    <button class="ghost-btn" id="ov-rules">❓ Jak se hraje</button>
     <h2 style="margin-top:16px;font-size:17px">📷 Fotografie míst</h2>
     <div id="credits-box"><p style="opacity:0.7">Načítám…</p></div>
     <button class="big-btn" id="ov-close">Zpět</button>
   `);
   $('#ov-close').onclick = hideOverlay;
+  $('#ov-rules').onclick = () => showRules(showAbout);
   try {
     creditsCache ??= await (await fetch('data/photo-credits.json')).json();
     const byName = new Map(DATA.packs.map(p => [p.slug, p.name]));
@@ -643,11 +645,48 @@ function startAs(name) {
   }
 }
 
-function showPlayerPicker() {
+const LOGO = `
+  <svg class="welcome-logo" viewBox="0 0 512 512" aria-hidden="true">
+    <circle cx="256" cy="256" r="168" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.28)" stroke-width="6"/>
+    <polyline points="256,120 138,324 374,324" fill="none" stroke="#ffc93c" stroke-width="26"
+              stroke-linecap="round" stroke-linejoin="round"/>
+    <g font-family="Nunito, Arial, sans-serif" font-weight="900" text-anchor="middle">
+      <circle cx="256" cy="120" r="62" fill="#fff"/><text x="256" y="146" font-size="76" fill="#2b3050">S</text>
+      <circle cx="138" cy="324" r="62" fill="#ffc93c"/><text x="138" y="350" font-size="76" fill="#5c3d00">L</text>
+      <circle cx="374" cy="324" r="62" fill="#fff"/><text x="374" y="350" font-size="76" fill="#2b3050">O</text>
+    </g>
+  </svg>`;
+
+const RULES = [
+  ['👆', 'Spoj písmena', 'Ve spodním kruhu táhni prstem (nebo myší) přes písmena a slož z nich slovo. Puštěním ho odešleš.'],
+  ['🧩', 'Vyplň křížovku', 'Když slovo v křížovce je, jeho písmena vlétnou do mřížky. Úroveň končí, jakmile je mřížka celá plná.'],
+  ['⭐', 'Bonusová slova', 'Najdeš-li platné české slovo, které v křížovce není, počítá se jako bonus. Za každých 10 bonusů dostaneš mince.'],
+  ['💡', 'Nápovědy', 'Žárovka (25 mincí) odkryje náhodné písmeno, kladivo (60 mincí) políčko, které si vybereš. Mince získáváš za dokončené úrovně.'],
+  ['🏆', 'Žebříček', 'Hraješ o nejvyšší dosaženou úroveň. Žebříček je společný pro všechny kamarády.'],
+  ['⚑', 'Nesedí ti slovo?', 'Tlačítkem vedle slova ho můžeš nahlásit — hra se díky tomu zlepšuje.'],
+];
+
+function showRules(back) {
+  showOverlay(`
+    <h2>Jak se hraje</h2>
+    <ul class="rules-list">
+      ${RULES.map(([icon, title, text]) => `
+        <li><em>${icon}</em><div><b>${title}</b><span>${text}</span></div></li>`).join('')}
+    </ul>
+    <button class="big-btn" id="ov-back">Rozumím</button>
+  `);
+  $('#ov-back').onclick = back;
+}
+
+function showPlayerPicker(intro = false) {
   const names = Object.keys(root.players)
     .sort((a, b) => (root.players[b].lastPlayed ?? 0) - (root.players[a].lastPlayed ?? 0));
   showOverlay(`
-    <h2>Kdo hraje?</h2>
+    ${intro ? `<div class="welcome">
+        ${LOGO}
+        <h1>Slovotoč</h1>
+        <p class="tagline">Česká slovní hra — spojuj písmena,<br>hledej slova a vyplň křížovku.</p>
+      </div>` : '<h2>Kdo hraje?</h2>'}
     ${names.length ? `<div class="player-list">
       ${names.map(n => {
         const p = root.players[n];
@@ -655,12 +694,14 @@ function showPlayerPicker() {
           <em>${p.avatar}</em><b>${esc(n)}</b><span>úroveň ${Math.min(p.levelIndex + 1, LEVELS.length)}</span>
         </button>`;
       }).join('')}
-    </div>` : '<p>Zadej své jméno a pojď hrát!</p>'}
+    </div>` : `<p>${intro ? 'Zadej jméno a pojď hrát — žádná registrace, žádné reklamy.' : 'Zadej své jméno a pojď hrát!'}</p>`}
     <div class="new-player">
-      <input id="np-name" type="text" maxlength="14" placeholder="Nový hráč – jméno" autocomplete="off" />
+      <input id="np-name" type="text" maxlength="14" placeholder="${names.length ? 'Nový hráč – jméno' : 'Tvoje jméno'}" autocomplete="off" />
       <button class="big-btn" id="np-go">Hrát</button>
     </div>
+    <button class="ghost-btn" id="ov-rules">❓ Jak se hraje</button>
   `);
+  $('#ov-rules').onclick = () => showRules(() => showPlayerPicker(intro));
   for (const chip of els.overlayCard.querySelectorAll('.player-chip')) {
     chip.onclick = () => {
       const p = root.players[chip.dataset.name];
@@ -726,7 +767,7 @@ async function boot() {
   if (root.active && root.players[root.active]) {
     startAs(root.active);
   } else {
-    showPlayerPicker();
+    showPlayerPicker(true); // first visit → full intro screen
   }
 
   // tiny test hook (harmless in production, used by automated smoke tests)
