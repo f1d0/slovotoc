@@ -52,6 +52,7 @@ const els = {
   sound: $('#btn-sound'),
   player: $('#btn-player'),
   playerAvatar: $('#player-avatar'),
+  exitDaily: $('#btn-exit-daily'),
   report: $('#btn-report'),
   overlay: $('#overlay'),
   overlayCard: $('#overlay-card'),
@@ -227,6 +228,9 @@ function loadLevel(restore = false, opts = {}) {
   els.packName.textContent = dailyMode ? '📅 Denní výzva' : pack.name;
   els.levelLabel.textContent = dailyMode ? todayLabel() : `Úroveň ${levelIdx + 1}`;
   els.progressFill.style.width = dailyMode ? '100%' : `${(inPack / pack.levels.length) * 100}%`;
+  // the way out of the daily takes the trophy's slot, so the bar keeps its size
+  els.exitDaily.classList.toggle('hidden', !dailyMode);
+  els.player.classList.toggle('hidden', dailyMode);
 
   found = new Set();
   foundBonus = new Set();
@@ -483,7 +487,15 @@ function dailyDone() {
 function startDaily() {
   hideOverlay();
   loadLevel(false, { daily: true, index: dailyIndex() });
-  toast('📅 Denní výzva — stejná hádanka pro všechny!', 2600);
+  toast('📅 Denní výzva — zpět do hry tlačítkem ✕ nahoře', 3200);
+}
+
+// Leaving the daily unfinished is allowed; it stays open until midnight.
+function exitDaily() {
+  if (!dailyMode) return;
+  loadLevel(true);
+  updateDailyBadge();
+  toast('Denní výzva na tebe počká do půlnoci ⏳', 2200);
 }
 
 function finishDaily() {
@@ -885,6 +897,7 @@ els.bulb.addEventListener('click', () => { unlock(); useBulb(); });
 els.hammer.addEventListener('click', () => { unlock(); toggleHammer(); });
 els.jar.addEventListener('click', () => { unlock(); showJar(); });
 els.player.addEventListener('click', () => { unlock(); showLeaderboard(); });
+els.exitDaily.addEventListener('click', () => { unlock(); exitDaily(); });
 els.packName.addEventListener('click', () => {
   if (curPack?.fact) toast(`📍 ${curPack.name} — ${curPack.fact}`, 5000);
 });
