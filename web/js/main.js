@@ -657,6 +657,11 @@ function bestOf(p) {
 function syncScore(immediate = false) {
   if (!player) return Promise.resolve();
   player.best = bestOf(player); // starting over must not erase the achievement
+  // A profile that has never finished anything doesn't belong on the board;
+  // otherwise every abandoned name shows up as a row full of zeros.
+  if (player.best === 0 && player.bonusTotal === 0 && totalStars(player) === 0) {
+    return Promise.resolve();
+  }
   clearTimeout(syncTimer);
   const doPush = () => pushScore({
     deviceId: root.deviceId,
@@ -784,7 +789,30 @@ async function showAbout() {
   }
 }
 
-function startAs(name) {
+// An empty local profile with the same name as a real player on the board
+// is almost always the same person on a second device — pick their progress
+// up instead of making them start over.
+async function recoverIfEmpty(name) {
+  const p = root.players[name];
+  if (!p || bestOf(p) > 0 || p.bonusTotal > 0) return false;
+  try {
+    const row = await fetchPlayer(name);
+    if (!row || (row.levels ?? 0) === 0) return false;
+    p.levelIndex = Math.min(row.levels, LEVELS.length - 1);
+    p.best = row.levels;
+    p.coins = Math.max(p.coins, row.coins ?? 0);
+    p.bonusTotal = row.bonus ?? 0;
+    if (row.streak) p.daily = { day: p.daily?.day ?? null, streak: row.streak };
+    p.cur = null;
+    saveRoot(root);
+    toast(`Vítej zpátky, ${name}! Pokračuješ na úrovni ${p.levelIndex + 1}.`, 3000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function startAs(name, { recover = true } = {}) {
   root.active = name;
   player = root.players[name];
   setSoundEnabled(root.sound);
@@ -799,6 +827,12 @@ function startAs(name) {
     loadLevel(true);
   }
   updateDailyBadge();
+  // reload the level once progress has been pulled from the shared board
+  if (recover) {
+    recoverIfEmpty(name).then(found => {
+      if (found && player?.name === name) loadLevel(true);
+    });
+  }
 }
 
 const LOGO = `
@@ -848,7 +882,7 @@ function adoptPlayer(row) {
   p.lastPlayed = Date.now();
   root.players[row.name] = p;
   saveRoot(root);
-  startAs(row.name);
+  startAs(row.name, { recover: false });
   toast(`Vítej zpátky, ${row.name}! Pokračuješ na úrovni ${p.levelIndex + 1}.`, 3000);
 }
 
