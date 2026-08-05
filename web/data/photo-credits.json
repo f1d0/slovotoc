@@ -17,11 +17,23 @@
     "license": "CC BY-SA 4.0",
     "page": "https://commons.wikimedia.org/wiki/File:Lan%C5%A1kroun_(12).jpg"
   },
+  "karlstejn": {
+    "title": "Hrad Karlštejn (Karlštejn), Karlštejn 172",
+    "author": "Bjalek Michal",
+    "license": "CC BY-SA 3.0",
+    "page": "https://commons.wikimedia.org/wiki/File:Hrad_Karl%C5%A1tejn_(Karl%C5%A1tejn),_Karl%C5%A1tejn_172.JPG"
+  },
   "uvaly": {
-    "title": "Úvaly, Arnošta z Pardubic sq1",
-    "author": "Czech Wikipedia user Packa",
-    "license": "CC BY-SA 2.5",
-    "page": "https://commons.wikimedia.org/wiki/File:%C3%9Avaly,_Arno%C5%A1ta_z_Pardubic_sq1.jpg"
+    "title": "Úvaly (20)",
+    "author": "Dezidor",
+    "license": "CC BY 3.0",
+    "page": "https://commons.wikimedia.org/wiki/File:%C3%9Avaly_(20).jpg"
+  },
+  "kutna-hora": {
+    "title": "Chrám svaté Barbory - Kutná Hora",
+    "author": "Pudelek (Marcin Szala)",
+    "license": "CC BY-SA 4.0",
+    "page": "https://commons.wikimedia.org/wiki/File:Chr%C3%A1m_svat%C3%A9_Barbory_-_Kutn%C3%A1_Hora.jpg"
   },
   "celakovice": {
     "title": "CELAKOVICE tvrz",
@@ -30,10 +42,10 @@
     "page": "https://commons.wikimedia.org/wiki/File:CELAKOVICE_tvrz.jpg"
   },
   "cesky-krumlov": {
-    "title": "Cesky Krumlov Panorama",
-    "author": "Moebius1",
+    "title": "Český Krumlov (Krummau) - panorama",
+    "author": "Pudelek (Marcin Szala)",
     "license": "CC BY-SA 3.0",
-    "page": "https://commons.wikimedia.org/wiki/File:Cesky_Krumlov_Panorama.jpg"
+    "page": "https://commons.wikimedia.org/wiki/File:%C4%8Cesk%C3%BD_Krumlov_(Krummau)_-_panorama.JPG"
   },
   "hradek-oplatil": {
     "title": "Písník Oplatil I 03",
@@ -54,10 +66,10 @@
     "page": "https://commons.wikimedia.org/wiki/File:Titulka,_Komoranske_a_modranske_tune.jpg"
   },
   "telc": {
-    "title": "Telč, náměstí Zachariáše z Hradce, kostel sv. Ducha",
-    "author": "Daniel Baránek",
+    "title": "Telč, měšťanský dům, nám. Zachariáše z Hradce čp.15",
+    "author": "H2k4",
     "license": "CC BY-SA 3.0",
-    "page": "https://commons.wikimedia.org/wiki/File:Tel%C4%8D,_n%C3%A1m%C4%9Bst%C3%AD_Zachari%C3%A1%C5%A1e_z_Hradce,_kostel_sv._Ducha.jpg"
+    "page": "https://commons.wikimedia.org/wiki/File:Tel%C4%8D,_m%C4%9B%C5%A1%C5%A5ansk%C3%BD_d%C5%AFm,_n%C3%A1m._Zachari%C3%A1%C5%A1e_z_Hradce_%C4%8Dp.15.JPG"
   },
   "macocha": {
     "title": "Propast Macocha 03",
@@ -65,29 +77,17 @@
     "license": "CC BY-SA 3.0",
     "page": "https://commons.wikimedia.org/wiki/File:Propast_Macocha_03.jpg"
   },
-  "lednice": {
-    "title": "Zámek (Lednice) 2",
-    "author": "Pelish",
-    "license": "CC BY-SA 3.0",
-    "page": "https://commons.wikimedia.org/wiki/File:Z%C3%A1mek_(Lednice)_2.JPG"
-  },
-  "karlstejn": {
-    "title": "Hrad Karlštejn (Karlštejn), Karlštejn 172",
-    "author": "Bjalek Michal",
-    "license": "CC BY-SA 3.0",
-    "page": "https://commons.wikimedia.org/wiki/File:Hrad_Karl%C5%A1tejn_(Karl%C5%A1tejn),_Karl%C5%A1tejn_172.JPG"
-  },
-  "kutna-hora": {
-    "title": "Chrám svaté Barbory - Kutná Hora",
-    "author": "Pudelek (Marcin Szala)",
-    "license": "CC BY-SA 4.0",
-    "page": "https://commons.wikimedia.org/wiki/File:Chr%C3%A1m_svat%C3%A9_Barbory_-_Kutn%C3%A1_Hora.jpg"
-  },
   "hluboka": {
     "title": "Hluboka castle",
     "author": "Ivo Jansch from Netherlands",
     "license": "CC BY-SA 2.0",
     "page": "https://commons.wikimedia.org/wiki/File:Hluboka_castle.jpg"
+  },
+  "lednice": {
+    "title": "Zámek (Lednice) 2",
+    "author": "Pelish",
+    "license": "CC BY-SA 3.0",
+    "page": "https://commons.wikimedia.org/wiki/File:Z%C3%A1mek_(Lednice)_2.JPG"
   },
   "snezka": {
     "title": "Sněžka (Śnieżka, Schneekoppe), Krkonoše mountains 02",

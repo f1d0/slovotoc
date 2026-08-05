@@ -15,6 +15,9 @@ import sharp from 'sharp';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(__dirname, '..', 'web', 'assets', 'bg');
 const CREDITS = join(__dirname, '..', 'web', 'data', 'photo-credits.json');
+// Originals are cached outside the repo so the look can be re-tuned
+// (blur/brightness) without hitting Commons again.
+const SRC_DIR = process.env.BG_SRC ?? '/workspace/bg-src';
 
 // pack slug -> Wikipedia articles whose lead image is the iconic view
 // (tried first, in order), plus Commons search terms as a fallback.
@@ -162,29 +165,41 @@ async function looksGood(buf) {
   }
 }
 
+// Softened just enough to sit behind the puzzle, but sharp enough that the
+// place stays recognisable — readability is handled by the tiles, not by
+// blurring the photo into a smudge.
 async function makeBackground(buf, outPath) {
   await sharp(buf)
-    .resize(900, 1400, { fit: 'cover', position: 'attention' })
-    .blur(14)               // faint backdrop, never competes with the puzzle
-    .modulate({ brightness: 0.82, saturation: 0.9 })
-    .jpeg({ quality: 62, progressive: true })
+    .resize(1000, 1550, { fit: 'cover', position: 'attention' })
+    .blur(4)
+    .modulate({ brightness: 0.9, saturation: 1.05 })
+    .jpeg({ quality: 68, progressive: true })
     .toFile(outPath);
 }
 
 mkdirSync(OUT_DIR, { recursive: true });
+mkdirSync(SRC_DIR, { recursive: true });
 // resume: keep what previous runs already produced
 const credits = existsSync(CREDITS) ? JSON.parse(readFileSync(CREDITS, 'utf8')) : {};
 
 for (const [slug, { articles, terms }] of Object.entries(WANTED)) {
-  if (credits[slug] && existsSync(join(OUT_DIR, `${slug}.jpg`))) {
-    console.error(`· ${slug}: už hotovo, přeskakuji`);
+  const out = join(OUT_DIR, `${slug}.jpg`);
+  const src = join(SRC_DIR, `${slug}.jpg`);
+  // cached original → just re-render, no network
+  if (credits[slug] && existsSync(src)) {
+    await makeBackground(readFileSync(src), out);
+    console.error(`· ${slug}: přegenerováno z cache`);
+    continue;
+  }
+  if (credits[slug] && existsSync(out)) {
+    console.error(`· ${slug}: hotovo (bez originálu v cache), přeskakuji`);
     continue;
   }
   try {
     await sleep(2500); // be gentle with the Commons API
     const found = (await findViaArticle(articles)) ?? (await findPhoto(terms));
     if (!found) { console.error(`✗ ${slug}: no suitable photo`); continue; }
-    const out = join(OUT_DIR, `${slug}.jpg`);
+    writeFileSync(src, found.buf);
     await makeBackground(found.buf, out);
     credits[slug] = {
       title: found.title,
