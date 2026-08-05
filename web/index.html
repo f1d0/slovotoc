@@ -26,6 +26,9 @@
         <div id="level-label">Úroveň 1</div>
       </div>
       <div class="tb-right">
+        <button id="btn-player" class="icon-btn" aria-label="Hráči a žebříček">
+          <span id="player-avatar">🏆</span>
+        </button>
         <button id="btn-sound" class="icon-btn" aria-label="Zvuk">
           <svg viewBox="0 0 24 24" class="ic-sound-on"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
           <svg viewBox="0 0 24 24" class="ic-sound-off" style="display:none"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M16 9l6 6M22 9l-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -43,7 +46,10 @@
       <div id="grid" role="grid" aria-label="Křížovka"></div>
     </main>
 
-    <div id="word-slot"><div id="word-pill" class="hidden"></div></div>
+    <div id="word-slot">
+      <div id="word-pill" class="hidden"></div>
+      <button id="btn-report" class="hidden" aria-label="Nahlásit slovo">⚑</button>
+    </div>
 
     <section id="controls">
       <div class="side-col left">

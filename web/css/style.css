@@ -113,6 +113,7 @@ body {
 }
 .icon-btn svg { width: 21px; height: 21px; }
 .icon-btn:active { transform: scale(0.92); }
+#player-avatar { font-size: 19px; line-height: 1; }
 
 #coins {
   display: flex;
@@ -204,6 +205,21 @@ body {
   place-items: center;
   flex: 0 0 auto;
 }
+#btn-report {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px; height: 34px;
+  border: 1px solid var(--tile-border);
+  border-radius: 11px;
+  background: var(--tile);
+  color: #ffb0b0;
+  font-size: 16px;
+  cursor: pointer;
+  animation: report-in 0.25s ease both;
+}
+@keyframes report-in { from { opacity: 0; transform: translateY(-50%) scale(0.6); } }
 #word-pill {
   display: flex;
   gap: 3px;
@@ -483,6 +499,66 @@ body {
   color: #fff;
   cursor: pointer;
 }
+
+/* ---------- players & leaderboard ---------- */
+.player-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0 4px;
+}
+.player-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.10);
+  color: #fff;
+  font-family: inherit;
+  padding: 11px 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.player-chip:active { background: rgba(255, 255, 255, 0.22); }
+.player-chip em { font-style: normal; font-size: 22px; }
+.player-chip b { flex: 1; font-size: 16px; font-weight: 900; }
+.player-chip span { font-size: 12px; opacity: 0.75; font-weight: 700; }
+.new-player { display: flex; gap: 8px; margin-top: 16px; }
+.new-player input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.22);
+  color: #fff;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  padding: 12px 14px;
+  outline: none;
+}
+.new-player input::placeholder { color: rgba(255, 255, 255, 0.45); font-weight: 700; }
+.new-player .big-btn { margin-top: 0; width: auto; padding: 12px 22px; }
+
+.board { margin: 14px 0 4px; text-align: left; }
+.board-row {
+  display: grid;
+  grid-template-columns: 30px 1fr 52px 40px 46px;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 11px;
+  font-size: 14px;
+}
+.board-row i { font-style: normal; font-weight: 900; }
+.board-row b { font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-row span { text-align: right; font-weight: 800; opacity: 0.9; }
+.board-row.me { background: rgba(255, 201, 60, 0.18); border: 1px solid rgba(255, 201, 60, 0.4); }
+.board-head { opacity: 0.6; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; padding-bottom: 2px; }
+.board-head i, .board-head span { font-weight: 700; }
 
 /* ---------- toast & confetti ---------- */
 #toast {

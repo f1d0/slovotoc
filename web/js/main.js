@@ -1,12 +1,12 @@
 // Slovotoč – main game flow.
 
-import { loadState, saveState, resetState } from './state.js';
+import { loadRoot, saveRoot, newPlayer, claimLegacy, AVATARS } from './state.js';
 import { Wheel, UC } from './wheel.js';
 import { Grid } from './grid.js';
 import { confettiBurst } from './confetti.js';
 import {
   unlock, setSoundEnabled, sndWord, sndBonus, sndDupe, sndBad,
-  sndReveal, sndCoin, sndFanfare, vib,
+  sndReveal, sndCoin, sndFanfare,
 } from './audio.js';
 
 const BULB_COST = 25;
@@ -15,6 +15,7 @@ const LEVEL_REWARD_BASE = 10;
 const LEVEL_REWARD_PER_WORD = 2;
 const BONUS_MILESTONE = 10;      // every N bonus words…
 const BONUS_MILESTONE_COINS = 15; // …pay this many coins
+const REPO_URL = 'https://github.com/f1d0/wowczechversion';
 
 // one gradient theme per pack (cycled if there are more packs)
 const THEMES = [
@@ -45,6 +46,9 @@ const els = {
   jar: $('#btn-jar'),
   bonusCount: $('#bonus-count'),
   sound: $('#btn-sound'),
+  player: $('#btn-player'),
+  playerAvatar: $('#player-avatar'),
+  report: $('#btn-report'),
   overlay: $('#overlay'),
   overlayCard: $('#overlay-card'),
   confetti: $('#confetti'),
@@ -54,7 +58,8 @@ const els = {
 
 let DATA = null;      // levels.json
 let LEVELS = [];      // flattened
-let state = loadState();
+let root = loadRoot();
+let player = null;    // active player object
 let grid = null;
 let level = null;     // current level data
 let found = new Set();      // found target words
@@ -63,6 +68,9 @@ let hinted = new Set();     // hint-revealed cell keys
 let busy = false;           // block input during transitions
 let hammerArmed = false;
 let toastTimer = null;
+let lastWord = '';          // last submitted word (for reporting)
+let lastWordAccepted = false;
+let reportTimer = null;
 
 // ---------- helpers ----------
 
@@ -74,7 +82,7 @@ function toast(msg, ms = 1800) {
 }
 
 function setCoins(n, bump = false) {
-  state.coins = n;
+  player.coins = n;
   els.coinCount.textContent = n;
   if (bump) {
     els.coins.classList.remove('bump');
@@ -86,8 +94,8 @@ function setCoins(n, bump = false) {
 }
 
 function updateToolButtons() {
-  els.bulb.classList.toggle('disabled', state.coins < BULB_COST);
-  els.hammer.classList.toggle('disabled', state.coins < HAMMER_COST && !hammerArmed);
+  els.bulb.classList.toggle('disabled', player.coins < BULB_COST);
+  els.hammer.classList.toggle('disabled', player.coins < HAMMER_COST && !hammerArmed);
 }
 
 function packOf(levelIdx) {
@@ -109,19 +117,24 @@ function applyTheme(packIdx) {
 }
 
 function persist() {
-  state.cur = {
-    idx: state.levelIndex,
+  if (!player) return;
+  player.cur = {
+    idx: player.levelIndex,
     found: [...found],
     hinted: [...hinted],
     bonus: [...foundBonus],
   };
-  saveState(state);
+  saveRoot(root);
+}
+
+function esc(s) {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 // ---------- word pill ----------
 
 function showPill(word) {
-  els.tip.classList.toggle('hidden', !!word || state.sawTip || state.levelIndex > 0);
+  els.tip.classList.toggle('hidden', !!word || !player || player.sawTip || player.levelIndex > 0);
   if (!word) { els.pill.classList.add('hidden'); return; }
   els.pill.className = '';
   els.pill.innerHTML = [...word].map(ch => `<span>${UC(ch)}</span>`).join('');
@@ -139,7 +152,6 @@ function pillResult(cls, keep = 650) {
 // ---------- fly animations ----------
 
 function flyLetters(word, targets, { gold = false, onDone } = {}) {
-  // animate letters from the pill to target rects
   const spans = [...els.pill.children];
   const cellPx = parseFloat(getComputedStyle(els.grid).getPropertyValue('--cell')) || 44;
   const finished = [];
@@ -169,12 +181,12 @@ function flyLetters(word, targets, { gold = false, onDone } = {}) {
 // ---------- level lifecycle ----------
 
 function loadLevel(restore = false) {
-  const { pack, packIdx, inPack } = packOf(state.levelIndex);
-  level = LEVELS[state.levelIndex];
+  const { pack, packIdx, inPack } = packOf(player.levelIndex);
+  level = LEVELS[player.levelIndex];
   applyTheme(packIdx);
 
   els.packName.textContent = pack.name;
-  els.levelLabel.textContent = `Úroveň ${state.levelIndex + 1}`;
+  els.levelLabel.textContent = `Úroveň ${player.levelIndex + 1}`;
   els.progressFill.style.width = `${(inPack / pack.levels.length) * 100}%`;
 
   found = new Set();
@@ -189,27 +201,29 @@ function loadLevel(restore = false) {
   wheel.setLetters([...level.letters]);
   wheel.setEnabled(true);
 
-  if (restore && state.cur && state.cur.idx === state.levelIndex) {
-    for (const w of state.cur.found) {
+  if (restore && player.cur && player.cur.idx === player.levelIndex) {
+    for (const w of player.cur.found) {
       found.add(w);
       for (const k of grid.wordCells.get(w) || []) grid.reveal(k, { silent: true });
     }
-    for (const k of state.cur.hinted) {
+    for (const k of player.cur.hinted) {
       hinted.add(k);
       grid.reveal(k, { hinted: true, silent: true });
     }
-    for (const b of state.cur.bonus) foundBonus.add(b);
+    for (const b of player.cur.bonus) foundBonus.add(b);
   }
 
   els.bonusCount.textContent = foundBonus.size;
-  els.tip.classList.toggle('hidden', state.sawTip || state.levelIndex > 0);
+  els.tip.classList.toggle('hidden', player.sawTip || player.levelIndex > 0);
+  els.playerAvatar.textContent = player.avatar;
   updateToolButtons();
+  setCoins(player.coins);
   persist();
 }
 
 function wordFound(word) {
   found.add(word);
-  state.sawTip = true;
+  player.sawTip = true;
   els.tip.classList.add('hidden');
   sndWord();
   pillResult('ok', 120);
@@ -219,7 +233,6 @@ function wordFound(word) {
     onDone: () => {
       (grid.wordCells.get(word) || []).forEach(k => grid.reveal(k));
       sndReveal();
-      // a word placed by drag can complete crossing words revealed by hints
       for (const w of grid.completedWords(found)) { found.add(w); grid.pulseWord(w); }
       persist();
       if (grid.allRevealed()) return levelComplete();
@@ -230,7 +243,7 @@ function wordFound(word) {
 
 function bonusFound(word) {
   foundBonus.add(word);
-  state.bonusTotal += 1;
+  player.bonusTotal += 1;
   sndBonus();
   pillResult('bonus', 150);
   const jarRect = els.jar.getBoundingClientRect();
@@ -241,9 +254,9 @@ function bonusFound(word) {
       els.jar.classList.remove('wiggle');
       void els.jar.offsetWidth;
       els.jar.classList.add('wiggle');
-      if (state.bonusTotal % BONUS_MILESTONE === 0) {
-        setCoins(state.coins + BONUS_MILESTONE_COINS, true);
-        toast(`⭐ +${BONUS_MILESTONE_COINS} mincí za ${state.bonusTotal} bonusových slov!`);
+      if (player.bonusTotal % BONUS_MILESTONE === 0) {
+        setCoins(player.coins + BONUS_MILESTONE_COINS, true);
+        toast(`⭐ +${BONUS_MILESTONE_COINS} mincí za ${player.bonusTotal} bonusových slov!`);
       }
       persist();
     },
@@ -258,7 +271,9 @@ function submitWord(raw) {
     if (word.length > 0) showPill('');
     return;
   }
+  lastWord = word;
   if (grid.wordCells.has(word)) {
+    lastWordAccepted = true;
     if (found.has(word)) {
       sndDupe();
       pillResult('dupe', 350);
@@ -267,6 +282,7 @@ function submitWord(raw) {
       wordFound(word);
     }
   } else if (level.bonus.includes(word)) {
+    lastWordAccepted = true;
     if (foundBonus.has(word)) {
       sndDupe();
       pillResult('dupe', 350);
@@ -277,9 +293,60 @@ function submitWord(raw) {
       bonusFound(word);
     }
   } else {
+    lastWordAccepted = false;
     sndBad();
     pillResult('bad', 450);
   }
+  offerReport();
+}
+
+// ---------- word reporting ----------
+
+function offerReport() {
+  els.report.classList.remove('hidden');
+  clearTimeout(reportTimer);
+  reportTimer = setTimeout(() => els.report.classList.add('hidden'), 6000);
+}
+
+function reportText(word, accepted) {
+  const lvl = player ? player.levelIndex + 1 : '?';
+  return accepted
+    ? `Slovo „${UC(word)}" (úroveň ${lvl}) do hry nepatří / není správné.`
+    : `Slovo „${UC(word)}" (úroveň ${lvl}) mělo být uznáno, ale hra ho odmítla.`;
+}
+
+function showReport() {
+  if (!lastWord) return;
+  const w = UC(lastWord);
+  const issueTitle = encodeURIComponent(`Hlášení slova: ${w}`);
+  const bodyAccepted = encodeURIComponent(reportText(lastWord, true));
+  const bodyRejected = encodeURIComponent(reportText(lastWord, false));
+  const wrongUrl = `${REPO_URL}/issues/new?title=${issueTitle}&body=${bodyAccepted}`;
+  const missingUrl = `${REPO_URL}/issues/new?title=${issueTitle}&body=${bodyRejected}`;
+  showOverlay(`
+    <h2>⚑ Nahlásit slovo</h2>
+    <p style="font-size:24px;font-weight:900;letter-spacing:0.05em">${esc(w)}</p>
+    <p>Co je s ním špatně?</p>
+    <button class="big-btn" id="rep-wrong">${lastWordAccepted ? 'Tohle není správné slovo' : 'Slovo mělo být uznáno'}</button>
+    <button class="ghost-btn" id="rep-copy">📋 Zkopírovat hlášení</button>
+    <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
+    <p style="font-size:12px;opacity:0.7">Hlášení se otevře jako GitHub issue – stačí potvrdit. Bez GitHub účtu použij kopírování a pošli text autorovi.</p>
+  `);
+  $('#rep-wrong').onclick = () => {
+    window.open(lastWordAccepted ? wrongUrl : missingUrl, '_blank', 'noopener');
+    hideOverlay();
+    toast('Díky za hlášení! 🙏');
+  };
+  $('#rep-copy').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(reportText(lastWord, lastWordAccepted));
+      toast('Zkopírováno 📋');
+    } catch {
+      toast('Kopírování se nepovedlo 🙁');
+    }
+    hideOverlay();
+  };
+  $('#ov-close').onclick = hideOverlay;
 }
 
 // ---------- hints ----------
@@ -298,17 +365,17 @@ function hintReveal(k) {
 
 function useBulb() {
   if (busy || hammerArmed) return;
-  if (state.coins < BULB_COST) { toast('Nedostatek mincí 🙁'); return; }
+  if (player.coins < BULB_COST) { toast('Nedostatek mincí 🙁'); return; }
   const keys = grid.unrevealedKeys();
   if (!keys.length) return;
-  setCoins(state.coins - BULB_COST);
+  setCoins(player.coins - BULB_COST);
   const k = keys[Math.floor(Math.random() * keys.length)];
   hintReveal(k);
 }
 
 function toggleHammer() {
   if (busy) return;
-  if (!hammerArmed && state.coins < HAMMER_COST) { toast('Nedostatek mincí 🙁'); return; }
+  if (!hammerArmed && player.coins < HAMMER_COST) { toast('Nedostatek mincí 🙁'); return; }
   hammerArmed = !hammerArmed;
   els.hammer.classList.toggle('armed', hammerArmed);
   grid.setPickMode(hammerArmed);
@@ -322,7 +389,7 @@ els.grid.addEventListener('click', e => {
   hammerArmed = false;
   els.hammer.classList.remove('armed');
   grid.setPickMode(false);
-  setCoins(state.coins - HAMMER_COST);
+  setCoins(player.coins - HAMMER_COST);
   hintReveal(cell.dataset.k);
 });
 
@@ -347,44 +414,48 @@ function levelComplete() {
   wheel.setEnabled(false);
   const wordsN = level.words.length;
   const reward = LEVEL_REWARD_BASE + LEVEL_REWARD_PER_WORD * wordsN;
-  const { pack, inPack } = packOf(state.levelIndex);
+  const { pack, inPack } = packOf(player.levelIndex);
   const lastInPack = inPack === pack.levels.length - 1;
-  const lastLevel = state.levelIndex === LEVELS.length - 1;
+  const lastLevel = player.levelIndex === LEVELS.length - 1;
 
   els.progressFill.style.width = `${((inPack + 1) / pack.levels.length) * 100}%`;
   sndFanfare();
   confettiBurst(els.confetti);
 
   setTimeout(() => {
-    setCoins(state.coins + reward, true);
-    state.levelIndex = Math.min(state.levelIndex + 1, LEVELS.length - 1);
-    state.cur = null;
+    setCoins(player.coins + reward, true);
+    player.levelIndex = Math.min(player.levelIndex + 1, LEVELS.length - 1);
+    player.cur = null;
 
     if (lastLevel) {
-      state.levelIndex = LEVELS.length; // marks everything done
-      saveState(state);
+      player.levelIndex = LEVELS.length; // marks everything done
+      saveRoot(root);
       showOverlay(`
         <h1>🏆 Fantastické!</h1>
-        <p>Dokončil jsi všech ${LEVELS.length} úrovní Slovotoče!</p>
-        <div class="reward">${coinSvg()} ${state.coins}</div>
-        <p>Celkem bonusových slov: <b>${state.bonusTotal}</b></p>
-        <button class="big-btn" id="ov-restart">Hrát znovu od začátku</button>
+        <p>${esc(player.name)}, dokončil jsi všech ${LEVELS.length} úrovní Slovotoče!</p>
+        <div class="reward">${coinSvg()} ${player.coins}</div>
+        <p>Celkem bonusových slov: <b>${player.bonusTotal}</b></p>
+        <button class="big-btn" id="ov-board">🏆 Žebříček</button>
+        <button class="ghost-btn" id="ov-restart">Hrát znovu od začátku</button>
       `);
+      $('#ov-board').onclick = showLeaderboard;
       $('#ov-restart').onclick = () => {
-        state = resetState();
-        setCoins(state.coins);
+        const fresh = newPlayer(player.name, player.avatar);
+        root.players[player.name] = fresh;
+        player = fresh;
+        saveRoot(root);
         hideOverlay();
         loadLevel();
       };
       return;
     }
 
-    saveState(state);
-    const nextPackName = lastInPack ? packOf(state.levelIndex).pack.name : null;
+    saveRoot(root);
+    const nextPackName = lastInPack ? packOf(player.levelIndex).pack.name : null;
     showOverlay(`
       ${lastInPack
-        ? `<h1>🎉 Balíček dokončen!</h1><p><b>${pack.name}</b> máš celý za sebou.<br>Čeká tě: <b>${nextPackName}</b></p>`
-        : `<h1>Výborně!</h1><p>Úroveň ${state.levelIndex} je hotová.</p>`}
+        ? `<h1>🎉 Balíček dokončen!</h1><p><b>${esc(pack.name)}</b> máš celý za sebou.<br>Čeká tě: <b>${esc(nextPackName)}</b></p>`
+        : `<h1>Výborně!</h1><p>Úroveň ${player.levelIndex} je hotová.</p>`}
       <div class="reward">+${reward} ${coinSvg()}</div>
       <button class="big-btn" id="ov-next">Další úroveň</button>
     `);
@@ -399,14 +470,103 @@ function showJar() {
   const words = [...foundBonus].sort((a, b) => a.localeCompare(b, 'cs'));
   showOverlay(`
     <h2>⭐ Bonusová slova</h2>
-    <p>V této úrovni: <b>${words.length}</b> · celkem: <b>${state.bonusTotal}</b></p>
+    <p>V této úrovni: <b>${words.length}</b> · celkem: <b>${player.bonusTotal}</b></p>
     ${words.length
-      ? `<div class="words">${words.map(w => `<b>${UC(w)}</b>`).join('')}</div>`
+      ? `<div class="words">${words.map(w => `<b>${esc(UC(w))}</b>`).join('')}</div>`
       : '<p>Zatím žádná – zkus najít slova, která nejsou v křížovce!</p>'}
     <p style="font-size:13px">Každých ${BONUS_MILESTONE} bonusových slov = +${BONUS_MILESTONE_COINS} mincí.</p>
     <button class="big-btn" id="ov-close">Zpět ke hře</button>
   `);
   $('#ov-close').onclick = hideOverlay;
+}
+
+// ---------- players & leaderboard ----------
+
+function playerStats(p) {
+  const done = Math.min(p.levelIndex, LEVELS.length);
+  return { done, bonus: p.bonusTotal, coins: p.coins };
+}
+
+function showLeaderboard() {
+  const list = Object.values(root.players)
+    .map(p => ({ p, s: playerStats(p) }))
+    .sort((a, b) => b.s.done - a.s.done || b.s.bonus - a.s.bonus || b.s.coins - a.s.coins);
+  const medals = ['🥇', '🥈', '🥉'];
+  showOverlay(`
+    <h2>🏆 Žebříček</h2>
+    <div class="board">
+      <div class="board-row board-head"><i></i><b>Hráč</b><span>Úrovně</span><span>⭐</span><span>🪙</span></div>
+      ${list.map(({ p, s }, i) => `
+        <div class="board-row ${p.name === player?.name ? 'me' : ''}">
+          <i>${medals[i] ?? i + 1 + '.'}</i>
+          <b>${p.avatar} ${esc(p.name)}</b>
+          <span>${s.done}</span><span>${s.bonus}</span><span>${s.coins}</span>
+        </div>`).join('')}
+    </div>
+    <p style="font-size:12px;opacity:0.7">Žebříček hráčů na tomto zařízení.</p>
+    <button class="big-btn" id="ov-switch">Vyměnit hráče</button>
+    <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
+  `);
+  $('#ov-switch').onclick = showPlayerPicker;
+  $('#ov-close').onclick = hideOverlay;
+}
+
+function startAs(name) {
+  root.active = name;
+  player = root.players[name];
+  setSoundEnabled(root.sound);
+  saveRoot(root);
+  hideOverlay();
+  if (player.levelIndex >= LEVELS.length) {
+    player.levelIndex = LEVELS.length - 1;
+    loadLevel();
+    levelComplete();
+  } else {
+    loadLevel(true);
+  }
+}
+
+function showPlayerPicker() {
+  const names = Object.keys(root.players)
+    .sort((a, b) => (root.players[b].lastPlayed ?? 0) - (root.players[a].lastPlayed ?? 0));
+  showOverlay(`
+    <h2>Kdo hraje?</h2>
+    ${names.length ? `<div class="player-list">
+      ${names.map(n => {
+        const p = root.players[n];
+        return `<button class="player-chip" data-name="${esc(n)}">
+          <em>${p.avatar}</em><b>${esc(n)}</b><span>úroveň ${Math.min(p.levelIndex + 1, LEVELS.length)}</span>
+        </button>`;
+      }).join('')}
+    </div>` : '<p>Zadej své jméno a pojď hrát!</p>'}
+    <div class="new-player">
+      <input id="np-name" type="text" maxlength="14" placeholder="Nový hráč – jméno" autocomplete="off" />
+      <button class="big-btn" id="np-go">Hrát</button>
+    </div>
+  `);
+  for (const chip of els.overlayCard.querySelectorAll('.player-chip')) {
+    chip.onclick = () => {
+      const p = root.players[chip.dataset.name];
+      p.lastPlayed = Date.now();
+      startAs(chip.dataset.name);
+    };
+  }
+  const input = $('#np-name');
+  const go = () => {
+    const name = input.value.trim();
+    if (!name) { input.focus(); return; }
+    if (!root.players[name]) {
+      const used = new Set(Object.values(root.players).map(p => p.avatar));
+      const free = AVATARS.filter(a => !used.has(a));
+      const avatar = (free.length ? free : AVATARS)[Math.floor(Math.random() * (free.length ? free.length : AVATARS.length))];
+      root.players[name] = newPlayer(name, avatar);
+      claimLegacy(root, root.players[name]);
+    }
+    root.players[name].lastPlayed = Date.now();
+    startAs(name);
+  };
+  $('#np-go').onclick = go;
+  input.onkeydown = e => { if (e.key === 'Enter') go(); };
 }
 
 // ---------- boot ----------
@@ -420,14 +580,16 @@ els.shuffle.addEventListener('click', () => { unlock(); wheel.shuffle(); });
 els.bulb.addEventListener('click', () => { unlock(); useBulb(); });
 els.hammer.addEventListener('click', () => { unlock(); toggleHammer(); });
 els.jar.addEventListener('click', () => { unlock(); showJar(); });
+els.player.addEventListener('click', () => { unlock(); showLeaderboard(); });
+els.report.addEventListener('click', () => { unlock(); showReport(); });
 document.addEventListener('pointerdown', unlock, { once: true });
 
 els.sound.addEventListener('click', () => {
-  state.sound = !state.sound;
-  setSoundEnabled(state.sound);
-  els.sound.querySelector('.ic-sound-on').style.display = state.sound ? '' : 'none';
-  els.sound.querySelector('.ic-sound-off').style.display = state.sound ? 'none' : '';
-  saveState(state);
+  root.sound = !root.sound;
+  setSoundEnabled(root.sound);
+  els.sound.querySelector('.ic-sound-on').style.display = root.sound ? '' : 'none';
+  els.sound.querySelector('.ic-sound-off').style.display = root.sound ? 'none' : '';
+  saveRoot(root);
 });
 
 window.addEventListener('resize', () => grid && grid.fit(els.board));
@@ -437,24 +599,24 @@ async function boot() {
   DATA = await res.json();
   LEVELS = DATA.packs.flatMap(p => p.levels);
 
-  setSoundEnabled(state.sound);
-  els.sound.querySelector('.ic-sound-on').style.display = state.sound ? '' : 'none';
-  els.sound.querySelector('.ic-sound-off').style.display = state.sound ? 'none' : '';
-  setCoins(state.coins);
+  setSoundEnabled(root.sound);
+  els.sound.querySelector('.ic-sound-on').style.display = root.sound ? '' : 'none';
+  els.sound.querySelector('.ic-sound-off').style.display = root.sound ? 'none' : '';
 
-  if (state.levelIndex >= LEVELS.length) {
-    // finished everything previously – show the final screen again
-    state.levelIndex = LEVELS.length - 1;
-    loadLevel();
-    levelComplete();
-    return;
+  if (root.active && root.players[root.active]) {
+    startAs(root.active);
+  } else {
+    showPlayerPicker();
   }
-  loadLevel(true);
 
   // tiny test hook (harmless in production, used by automated smoke tests)
   window.__slovotoc = {
     submit: w => submitWord(w),
-    state: () => ({ found: [...found], bonus: [...foundBonus], coins: state.coins, level: state.levelIndex }),
+    state: () => ({
+      found: [...found], bonus: [...foundBonus],
+      coins: player?.coins, level: player?.levelIndex, player: player?.name,
+      players: Object.keys(root.players),
+    }),
     level: () => level,
   };
 }
