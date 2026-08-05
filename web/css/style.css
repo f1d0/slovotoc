@@ -65,6 +65,28 @@ body {
 
 /* ---------- decorative background ---------- */
 .bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+/* faint photo of the current pack's place, behind everything */
+#bg-photo {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 0.9s ease;
+  /* keep the puzzle readable no matter how bright the photo is */
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.55) 55%, rgba(0,0,0,0.15) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.55) 55%, rgba(0,0,0,0.15) 100%);
+}
+#bg-photo.on { opacity: 0.20; }
+/* scrim: keeps the pack's colour theme dominant and the tiles high-contrast */
+.bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 26%, rgba(0, 0, 0, 0.30) 0%, rgba(0, 0, 0, 0.10) 45%, rgba(0, 0, 0, 0.40) 100%);
+  pointer-events: none;
+}
 .bg-blob {
   position: absolute;
   border-radius: 50%;
@@ -172,9 +194,11 @@ body {
   font-size: calc(var(--cell) * 0.55);
   font-weight: 900;
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.20);
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   position: relative;
 }
 .cell.empty { visibility: hidden; }
@@ -553,6 +577,18 @@ body {
 }
 .new-player input::placeholder { color: rgba(255, 255, 255, 0.45); font-weight: 700; }
 .new-player .big-btn { margin-top: 0; width: auto; padding: 12px 22px; }
+
+.credits { text-align: left; margin: 12px 0 4px; }
+.credits li {
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  opacity: 0.85;
+}
+.credits li b { display: block; font-size: 13px; opacity: 1; }
+.credits a { color: var(--accent); }
 
 .board { margin: 14px 0 4px; text-align: left; }
 .board-row {

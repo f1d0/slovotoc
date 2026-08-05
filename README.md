@@ -23,6 +23,21 @@ kamarádům odkaz a hrajte.
 - **💡 (25 mincí)** odkryje náhodné písmeno, **🔨 (60 mincí)** odkryje
   políčko, které si vybereš. Mince dostáváš za dokončené úrovně.
 
+## Fotky míst
+
+Každý balíček má na pozadí jemnou (rozostřenou a ztlumenou) fotku daného
+místa. Fotky stahuje `tools/fetch-backgrounds.mjs` z **Wikimedia Commons**
+a bere jen volně licencované snímky (CC0 / CC BY / CC BY-SA / public
+domain). Autor a licence každé fotky jsou uvedeny v `web/data/photo-credits.json`
+a přímo ve hře v sekci **ℹ️ O hře a fotkách**.
+
+```bash
+node tools/fetch-backgrounds.mjs   # doplní web/assets/bg/*.jpg + kredity
+```
+
+Hra je nekomerční projekt pro kamarády; fotky jsou použity v souladu se
+svými licencemi včetně uvedení autorů.
+
 ## Žebříček (Supabase)
 
 Skóre se ukládá do tabulky `leaderboard` v Supabase (free tier).

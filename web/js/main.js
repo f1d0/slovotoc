@@ -22,8 +22,8 @@ const REPO_URL = 'https://github.com/f1d0/wowczechversion';
 const THEMES = [
   ['#1b2547', '#3c2a63'], ['#0f3057', '#00587a'], ['#2d1e50', '#7a3b69'],
   ['#123c3c', '#1d5c4d'], ['#33234f', '#0f5d7a'], ['#472a54', '#1f3a70'],
-  ['#14303f', '#3e5641'], ['#3a1f43', '#8c3b5d'], ['#1e2a5a', '#0e7490'],
-  ['#402218', '#7a4419'], ['#252d5c', '#5b2a86'], ['#0b3d40', '#345995'],
+  ['#14303f', '#3e5641'], ['#3a1f43', '#78324f'], ['#1e2a5a', '#0e6480'],
+  ['#3a2216', '#6b3c12'], ['#252d5c', '#5b2a86'], ['#0b3d40', '#345995'],
   ['#511f3f', '#1f4068'], ['#173b45', '#6a2c70'], ['#243b55', '#141e30'],
   ['#3d1e6d', '#0e4b8a'],
 ];
@@ -55,6 +55,7 @@ const els = {
   confetti: $('#confetti'),
   toast: $('#toast'),
   tip: $('#hint-tip'),
+  bgPhoto: $('#bg-photo'),
 };
 
 let DATA = null;      // levels.json
@@ -111,11 +112,26 @@ function packOf(levelIdx) {
   return { pack: DATA.packs[last], packIdx: last, inPack: DATA.packs[last].levels.length - 1 };
 }
 
-function applyTheme(packIdx) {
+function applyTheme(packIdx, pack) {
   const [c1, c2] = THEMES[packIdx % THEMES.length];
   document.body.style.setProperty('--c1', c1);
   document.body.style.setProperty('--c2', c2);
   document.querySelector('meta[name="theme-color"]').setAttribute('content', c1);
+
+  // fade in the pack's photo once it has actually loaded, so the player
+  // never sees a half-drawn image
+  if (!pack?.slug) { els.bgPhoto.classList.remove('on'); return; }
+  const url = `assets/bg/${pack.slug}.jpg`;
+  if (els.bgPhoto.dataset.slug === pack.slug) return;
+  els.bgPhoto.dataset.slug = pack.slug;
+  els.bgPhoto.classList.remove('on');
+  const img = new Image();
+  img.onload = () => {
+    if (els.bgPhoto.dataset.slug !== pack.slug) return;
+    els.bgPhoto.style.backgroundImage = `url("${url}")`;
+    els.bgPhoto.classList.add('on');
+  };
+  img.src = url;
 }
 
 function persist() {
@@ -186,7 +202,7 @@ function loadLevel(restore = false) {
   const { pack, packIdx, inPack } = packOf(player.levelIndex);
   level = LEVELS[player.levelIndex];
   curPack = pack;
-  applyTheme(packIdx);
+  applyTheme(packIdx, pack);
 
   els.packName.textContent = pack.name;
   els.levelLabel.textContent = `Úroveň ${player.levelIndex + 1}`;
@@ -564,15 +580,50 @@ async function showLeaderboard() {
     <div id="board-box"><p style="opacity:0.7">Načítám žebříček…</p></div>
     <button class="big-btn" id="ov-switch">Vyměnit hráče</button>
     <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
+    <button class="ghost-btn" id="ov-about">ℹ️ O hře a fotkách</button>
   `);
   $('#ov-switch').onclick = showPlayerPicker;
   $('#ov-close').onclick = hideOverlay;
+  $('#ov-about').onclick = showAbout;
   syncScore(true); // fire in parallel; local rows are merged in below anyway
   try {
     const rows = await fetchTop();
     renderBoard(mergeLocal(rows), 'Společný žebříček všech hráčů. 🌍');
   } catch {
     renderBoard(localRows(), 'Jsi offline – zobrazuji jen hráče z tohoto zařízení.');
+  }
+}
+
+let creditsCache = null;
+
+async function showAbout() {
+  showOverlay(`
+    <h2>ℹ️ O hře</h2>
+    <p><b>Slovotoč</b> je nekomerční hra pro kamarády — bez reklam, bez účtů
+       a bez sledování. Inspirováno hrou Words of Wonders.</p>
+    <p style="font-size:13px">Slova pocházejí z českých slovníků
+       (Wikislovník, hunspell cs_CZ). Našel jsi chybné slovo? Použij
+       tlačítko ⚑ vedle slova.</p>
+    <h2 style="margin-top:16px;font-size:17px">📷 Fotografie míst</h2>
+    <div id="credits-box"><p style="opacity:0.7">Načítám…</p></div>
+    <button class="big-btn" id="ov-close">Zpět</button>
+  `);
+  $('#ov-close').onclick = hideOverlay;
+  try {
+    creditsCache ??= await (await fetch('data/photo-credits.json')).json();
+    const byName = new Map(DATA.packs.map(p => [p.slug, p.name]));
+    const box = $('#credits-box');
+    if (!box) return;
+    box.innerHTML = `<ul class="credits">${Object.entries(creditsCache).map(([slug, c]) => `
+      <li><b>${esc(byName.get(slug) ?? slug)}</b>
+        ${esc(c.author)} · ${esc(c.license)} ·
+        <a href="${esc(c.page)}" target="_blank" rel="noopener">Wikimedia Commons</a>
+      </li>`).join('')}</ul>
+      <p style="font-size:11px;opacity:0.65">Fotky jsou použity podle svých
+      licencí; autoři jsou uvedeni výše.</p>`;
+  } catch {
+    const box = $('#credits-box');
+    if (box) box.innerHTML = '<p style="opacity:0.7">Seznam se nepodařilo načíst.</p>';
   }
 }
 

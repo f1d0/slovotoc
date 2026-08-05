@@ -290,22 +290,22 @@ const TIERS = [
 // Cesta po českých památkách a zajímavých místech. Menší města jsou
 // proložená známými cíli, ať má každý balíček svůj charakter.
 const PACKS = [
-  { name: 'Lázně Bohdaneč', fact: 'Lázeňské město u Pardubic, které léčí slatinnými zábaly.' },
-  { name: 'Kunětická hora', fact: 'Hrad na kopci sopečného původu, vidět je z celého Polabí.' },
-  { name: 'Lanškroun', fact: 'Východočeské město se zámkem a soustavou rybníků.' },
-  { name: 'Karlštejn', fact: 'Hrad Karla IV. z roku 1348, kde se ukrývaly korunovační klenoty.' },
-  { name: 'Úvaly', fact: 'Město na východním okraji Prahy v údolí potoka Výmola.' },
-  { name: 'Kutná Hora', fact: 'Stříbro odsud platilo půl Evropy; chrám svaté Barbory je v UNESCO.' },
-  { name: 'Čelákovice', fact: 'Polabské město s dávnou minulostí a tvrzí, v níž dnes sídlí muzeum.' },
-  { name: 'Český Krumlov', fact: 'Zámek nad meandrem Vltavy a historické jádro na seznamu UNESCO.' },
-  { name: 'Hrádek u Pardubic', fact: 'Tiché místo v kraji nedaleko Pardubic.' },
-  { name: 'Adršpašské skály', fact: 'Pískovcové skalní město s věžemi vysokými desítky metrů.' },
-  { name: 'Komořany', fact: 'Místo se svým vlastním příběhem a okolní přírodou.' },
-  { name: 'Telč', fact: 'Náměstí s renesančními domy a podloubím, památka UNESCO.' },
-  { name: 'Macocha', fact: 'Nejhlubší propast svého druhu ve střední Evropě, hluboká 138 metrů.' },
-  { name: 'Hluboká nad Vltavou', fact: 'Bílý zámek v novogotickém stylu podle anglického vzoru.' },
-  { name: 'Lednice', fact: 'Zámek s parkem a minaretem, součást Lednicko-valtického areálu.' },
-  { name: 'Sněžka', fact: 'Nejvyšší hora Česka, 1603 metrů nad mořem.' },
+  { slug: 'lazne-bohdanec', name: 'Lázně Bohdaneč', fact: 'Lázeňské město u Pardubic, které léčí slatinnými zábaly.' },
+  { slug: 'kuneticka-hora', name: 'Kunětická hora', fact: 'Hrad na kopci sopečného původu, vidět je z celého Polabí.' },
+  { slug: 'lanskroun', name: 'Lanškroun', fact: 'Východočeské město se zámkem a soustavou rybníků.' },
+  { slug: 'karlstejn', name: 'Karlštejn', fact: 'Hrad Karla IV. z roku 1348, kde se ukrývaly korunovační klenoty.' },
+  { slug: 'uvaly', name: 'Úvaly', fact: 'Město na východním okraji Prahy v údolí potoka Výmola.' },
+  { slug: 'kutna-hora', name: 'Kutná Hora', fact: 'Stříbro odsud platilo půl Evropy; chrám svaté Barbory je v UNESCO.' },
+  { slug: 'celakovice', name: 'Čelákovice', fact: 'Polabské město s dávnou minulostí a tvrzí, v níž dnes sídlí muzeum.' },
+  { slug: 'cesky-krumlov', name: 'Český Krumlov', fact: 'Zámek nad meandrem Vltavy a historické jádro na seznamu UNESCO.' },
+  { slug: 'hradek-oplatil', name: 'Hrádek u Pardubic', fact: 'Kousek odsud leží písník Oplatil — jezero s průzračnou vodou vzniklé těžbou písku.' },
+  { slug: 'adrspach', name: 'Adršpašské skály', fact: 'Pískovcové skalní město s věžemi vysokými desítky metrů.' },
+  { slug: 'komorany', name: 'Komořany', fact: 'Pražská čtvrť u Vltavy zmíněná už roku 1088; dnes sídlo Českého hydrometeorologického ústavu.' },
+  { slug: 'telc', name: 'Telč', fact: 'Náměstí s renesančními domy a podloubím, památka UNESCO.' },
+  { slug: 'macocha', name: 'Macocha', fact: 'Nejhlubší propast svého druhu ve střední Evropě, hluboká 138 metrů.' },
+  { slug: 'hluboka', name: 'Hluboká nad Vltavou', fact: 'Bílý zámek v novogotickém stylu podle anglického vzoru.' },
+  { slug: 'lednice', name: 'Lednice', fact: 'Zámek s parkem a minaretem, součást Lednicko-valtického areálu.' },
+  { slug: 'snezka', name: 'Sněžka', fact: 'Nejvyšší hora Česka, 1603 metrů nad mořem.' },
 ];
 const PACK_SIZE = 10;
 
@@ -394,6 +394,7 @@ for (let i = 0; i < PACKS.length && i * PACK_SIZE < levels.length; i++) {
   packs.push({
     name: PACKS[i].name,
     fact: PACKS[i].fact,
+    slug: PACKS[i].slug,
     levels: levels.slice(i * PACK_SIZE, (i + 1) * PACK_SIZE),
   });
 }
