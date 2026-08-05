@@ -35,6 +35,7 @@ const $ = sel => document.querySelector(sel);
 const els = {
   packName: $('#pack-name'),
   levelLabel: $('#level-label'),
+  wordsLeft: $('#words-left'),
   coinCount: $('#coin-count'),
   coins: $('#coins'),
   progressFill: $('#pack-progress-fill'),
@@ -104,6 +105,16 @@ function setCoins(n, bump = false) {
 function updateToolButtons() {
   els.bulb.classList.toggle('disabled', player.coins < BULB_COST);
   els.hammer.classList.toggle('disabled', player.coins < HAMMER_COST && !hammerArmed);
+}
+
+// Tells the player how much of the crossword is actually left, so a streak
+// of bonus words doesn't read as "the game isn't reacting".
+function updateWordsLeft() {
+  if (!level || !grid) return;
+  const left = level.words.length - grid.completedWords(new Set()).length;
+  els.wordsLeft.textContent = left > 0
+    ? `zbývá ${left} ${left === 1 ? 'slovo' : left < 5 ? 'slova' : 'slov'}`
+    : '';
 }
 
 function packOf(levelIdx) {
@@ -242,6 +253,7 @@ function loadLevel(restore = false, opts = {}) {
   }
 
   els.bonusCount.textContent = foundBonus.size;
+  updateWordsLeft();
   els.tip.classList.toggle('hidden', player.sawTip || player.levelIndex > 0);
   els.playerAvatar.textContent = player.avatar;
   updateToolButtons();
@@ -262,6 +274,7 @@ function wordFound(word) {
       (grid.wordCells.get(word) || []).forEach(k => grid.reveal(k));
       sndReveal();
       for (const w of grid.completedWords(found)) { found.add(w); grid.pulseWord(w); }
+      updateWordsLeft();
       persist();
       if (grid.allRevealed()) return levelComplete();
       wheel.setEnabled(true);
@@ -282,6 +295,9 @@ function bonusFound(word) {
       els.jar.classList.remove('wiggle');
       void els.jar.offsetWidth;
       els.jar.classList.add('wiggle');
+      // Without this the only feedback is a small icon in the corner, and a
+      // run of valid-but-not-in-grid words looks like the game ignoring you.
+      toast(`⭐ ${UC(word)} — bonusové slovo, v křížovce není`, 2000);
       if (player.bonusTotal % BONUS_MILESTONE === 0) {
         setCoins(player.coins + BONUS_MILESTONE_COINS, true);
         toast(`⭐ +${BONUS_MILESTONE_COINS} mincí za ${player.bonusTotal} bonusových slov!`);
@@ -388,6 +404,7 @@ function hintReveal(k) {
     found.add(w);
     grid.pulseWord(w);
   }
+  updateWordsLeft();
   persist();
   if (grid.allRevealed()) levelComplete();
 }
