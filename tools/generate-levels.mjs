@@ -287,11 +287,25 @@ const TIERS = [
   { count: 60, baseLen: 7, words: [6, 9] },   // 101–160
 ];
 
+// Cesta po českých památkách a zajímavých místech. Menší města jsou
+// proložená známými cíli, ať má každý balíček svůj charakter.
 const PACKS = [
-  'Karlův most', 'Pražský hrad', 'Český Krumlov', 'Karlštejn',
-  'Petřín', 'Sněžka', 'Macocha', 'Telč',
-  'Eiffelova věž', 'Koloseum', 'Velká čínská zeď', 'Pyramidy v Gíze',
-  'Tádž Mahal', 'Machu Picchu', 'Socha Svobody', 'Big Ben',
+  { name: 'Lázně Bohdaneč', fact: 'Lázeňské město u Pardubic, které léčí slatinnými zábaly.' },
+  { name: 'Kunětická hora', fact: 'Hrad na kopci sopečného původu, vidět je z celého Polabí.' },
+  { name: 'Lanškroun', fact: 'Východočeské město se zámkem a soustavou rybníků.' },
+  { name: 'Karlštejn', fact: 'Hrad Karla IV. z roku 1348, kde se ukrývaly korunovační klenoty.' },
+  { name: 'Úvaly', fact: 'Město na východním okraji Prahy v údolí potoka Výmola.' },
+  { name: 'Kutná Hora', fact: 'Stříbro odsud platilo půl Evropy; chrám svaté Barbory je v UNESCO.' },
+  { name: 'Čelákovice', fact: 'Polabské město s dávnou minulostí a tvrzí, v níž dnes sídlí muzeum.' },
+  { name: 'Český Krumlov', fact: 'Zámek nad meandrem Vltavy a historické jádro na seznamu UNESCO.' },
+  { name: 'Hrádek u Pardubic', fact: 'Tiché místo v kraji nedaleko Pardubic.' },
+  { name: 'Adršpašské skály', fact: 'Pískovcové skalní město s věžemi vysokými desítky metrů.' },
+  { name: 'Komořany', fact: 'Místo se svým vlastním příběhem a okolní přírodou.' },
+  { name: 'Telč', fact: 'Náměstí s renesančními domy a podloubím, památka UNESCO.' },
+  { name: 'Macocha', fact: 'Nejhlubší propast svého druhu ve střední Evropě, hluboká 138 metrů.' },
+  { name: 'Hluboká nad Vltavou', fact: 'Bílý zámek v novogotickém stylu podle anglického vzoru.' },
+  { name: 'Lednice', fact: 'Zámek s parkem a minaretem, součást Lednicko-valtického areálu.' },
+  { name: 'Sněžka', fact: 'Nejvyšší hora Česka, 1603 metrů nad mořem.' },
 ];
 const PACK_SIZE = 10;
 
@@ -378,7 +392,8 @@ for (const tier of TIERS) {
 const packs = [];
 for (let i = 0; i < PACKS.length && i * PACK_SIZE < levels.length; i++) {
   packs.push({
-    name: PACKS[i],
+    name: PACKS[i].name,
+    fact: PACKS[i].fact,
     levels: levels.slice(i * PACK_SIZE, (i + 1) * PACK_SIZE),
   });
 }

@@ -69,6 +69,7 @@ let hinted = new Set();     // hint-revealed cell keys
 let busy = false;           // block input during transitions
 let hammerArmed = false;
 let toastTimer = null;
+let curPack = null;         // pack the current level belongs to
 let lastWord = '';          // last submitted word (for reporting)
 let lastWordAccepted = false;
 let reportTimer = null;
@@ -184,6 +185,7 @@ function flyLetters(word, targets, { gold = false, onDone } = {}) {
 function loadLevel(restore = false) {
   const { pack, packIdx, inPack } = packOf(player.levelIndex);
   level = LEVELS[player.levelIndex];
+  curPack = pack;
   applyTheme(packIdx);
 
   els.packName.textContent = pack.name;
@@ -456,10 +458,15 @@ function levelComplete() {
     }
 
     saveRoot(root);
-    const nextPackName = lastInPack ? packOf(player.levelIndex).pack.name : null;
+    const nextPack = lastInPack ? packOf(player.levelIndex).pack : null;
+    const nextPackName = nextPack?.name ?? null;
+    const nextPackFact = nextPack?.fact ?? null;
     showOverlay(`
       ${lastInPack
-        ? `<h1>🎉 Balíček dokončen!</h1><p><b>${esc(pack.name)}</b> máš celý za sebou.<br>Čeká tě: <b>${esc(nextPackName)}</b></p>`
+        ? `<h1>🎉 Balíček dokončen!</h1>
+           <p><b>${esc(pack.name)}</b> máš celý za sebou.</p>
+           <p>Čeká tě: <b>${esc(nextPackName)}</b></p>
+           ${nextPackFact ? `<p class="fact">📍 ${esc(nextPackFact)}</p>` : ''}`
         : `<h1>Výborně!</h1><p>Úroveň ${player.levelIndex} je hotová.</p>`}
       <div class="reward">+${reward} ${coinSvg()}</div>
       <button class="big-btn" id="ov-next">Další úroveň</button>
@@ -640,6 +647,9 @@ els.bulb.addEventListener('click', () => { unlock(); useBulb(); });
 els.hammer.addEventListener('click', () => { unlock(); toggleHammer(); });
 els.jar.addEventListener('click', () => { unlock(); showJar(); });
 els.player.addEventListener('click', () => { unlock(); showLeaderboard(); });
+els.packName.addEventListener('click', () => {
+  if (curPack?.fact) toast(`📍 ${curPack.name} — ${curPack.fact}`, 5000);
+});
 els.report.addEventListener('click', () => { unlock(); showReport(); });
 document.addEventListener('pointerdown', unlock, { once: true });
 
