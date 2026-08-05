@@ -1,6 +1,7 @@
 // Slovotoč – main game flow.
 
 import { loadRoot, saveRoot, newPlayer, claimLegacy, AVATARS } from './state.js';
+import { pushScore, fetchTop } from './leaderboard.js';
 import { Wheel, UC } from './wheel.js';
 import { Grid } from './grid.js';
 import { confettiBurst } from './confetti.js';
@@ -259,6 +260,7 @@ function bonusFound(word) {
         toast(`⭐ +${BONUS_MILESTONE_COINS} mincí za ${player.bonusTotal} bonusových slov!`);
       }
       persist();
+      syncScore();
     },
   });
 }
@@ -426,6 +428,7 @@ function levelComplete() {
     setCoins(player.coins + reward, true);
     player.levelIndex = Math.min(player.levelIndex + 1, LEVELS.length - 1);
     player.cur = null;
+    syncScore(true);
 
     if (lastLevel) {
       player.levelIndex = LEVELS.length; // marks everything done
@@ -441,6 +444,8 @@ function levelComplete() {
       $('#ov-board').onclick = showLeaderboard;
       $('#ov-restart').onclick = () => {
         const fresh = newPlayer(player.name, player.avatar);
+        fresh.best = bestOf(player);
+        fresh.bonusTotal = player.bonusTotal;
         root.players[player.name] = fresh;
         player = fresh;
         saveRoot(root);
@@ -480,35 +485,88 @@ function showJar() {
   $('#ov-close').onclick = hideOverlay;
 }
 
-// ---------- players & leaderboard ----------
+// ---------- players & global leaderboard ----------
 
-function playerStats(p) {
-  const done = Math.min(p.levelIndex, LEVELS.length);
-  return { done, bonus: p.bonusTotal, coins: p.coins };
+let syncTimer = null;
+
+function bestOf(p) {
+  return Math.max(p.best ?? 0, Math.min(p.levelIndex, LEVELS.length));
 }
 
-function showLeaderboard() {
-  const list = Object.values(root.players)
-    .map(p => ({ p, s: playerStats(p) }))
-    .sort((a, b) => b.s.done - a.s.done || b.s.bonus - a.s.bonus || b.s.coins - a.s.coins);
+function syncScore(immediate = false) {
+  if (!player) return Promise.resolve();
+  player.best = bestOf(player); // starting over must not erase the achievement
+  clearTimeout(syncTimer);
+  const doPush = () => pushScore({
+    deviceId: root.deviceId,
+    name: player.name,
+    avatar: player.avatar,
+    levels: player.best,
+    bonus: player.bonusTotal,
+    coins: player.coins,
+  }).catch(() => { /* offline – next sync will catch up */ });
+  if (immediate) return doPush();
+  syncTimer = setTimeout(doPush, 2500);
+  return Promise.resolve();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') syncScore(true);
+});
+
+function localRows() {
+  return Object.values(root.players).map(p => ({
+    name: p.name,
+    avatar: p.avatar,
+    levels: bestOf(p),
+    bonus: p.bonusTotal,
+    coins: p.coins,
+    device_id: root.deviceId,
+  }));
+}
+
+// The server copy can lag behind (a push may still be in flight, or have
+// failed offline), so this device's own players always win over server rows.
+function mergeLocal(rows) {
+  const local = localRows();
+  const isLocal = r => r.device_id === root.deviceId;
+  return [...rows.filter(r => !isLocal(r) || !local.some(l => l.name === r.name)), ...local];
+}
+
+function renderBoard(rows, note) {
   const medals = ['🥇', '🥈', '🥉'];
-  showOverlay(`
-    <h2>🏆 Žebříček</h2>
+  const sorted = rows.sort((a, b) => b.levels - a.levels || b.bonus - a.bonus || b.coins - a.coins);
+  const box = $('#board-box');
+  if (!box) return;
+  box.innerHTML = `
     <div class="board">
       <div class="board-row board-head"><i></i><b>Hráč</b><span>Úrovně</span><span>⭐</span><span>🪙</span></div>
-      ${list.map(({ p, s }, i) => `
-        <div class="board-row ${p.name === player?.name ? 'me' : ''}">
+      ${sorted.map((r, i) => `
+        <div class="board-row ${r.device_id === root.deviceId && r.name === player?.name ? 'me' : ''}">
           <i>${medals[i] ?? i + 1 + '.'}</i>
-          <b>${p.avatar} ${esc(p.name)}</b>
-          <span>${s.done}</span><span>${s.bonus}</span><span>${s.coins}</span>
+          <b>${r.avatar ?? ''} ${esc(r.name)}</b>
+          <span>${r.levels}</span><span>${r.bonus}</span><span>${r.coins}</span>
         </div>`).join('')}
     </div>
-    <p style="font-size:12px;opacity:0.7">Žebříček hráčů na tomto zařízení.</p>
+    <p style="font-size:12px;opacity:0.7">${note}</p>`;
+}
+
+async function showLeaderboard() {
+  showOverlay(`
+    <h2>🏆 Žebříček</h2>
+    <div id="board-box"><p style="opacity:0.7">Načítám žebříček…</p></div>
     <button class="big-btn" id="ov-switch">Vyměnit hráče</button>
     <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
   `);
   $('#ov-switch').onclick = showPlayerPicker;
   $('#ov-close').onclick = hideOverlay;
+  syncScore(true); // fire in parallel; local rows are merged in below anyway
+  try {
+    const rows = await fetchTop();
+    renderBoard(mergeLocal(rows), 'Společný žebříček všech hráčů. 🌍');
+  } catch {
+    renderBoard(localRows(), 'Jsi offline – zobrazuji jen hráče z tohoto zařízení.');
+  }
 }
 
 function startAs(name) {
@@ -517,6 +575,7 @@ function startAs(name) {
   setSoundEnabled(root.sound);
   saveRoot(root);
   hideOverlay();
+  syncScore();
   if (player.levelIndex >= LEVELS.length) {
     player.levelIndex = LEVELS.length - 1;
     loadLevel();

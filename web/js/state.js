@@ -13,6 +13,7 @@ export function newPlayer(name, avatar) {
     avatar: avatar ?? AVATARS[Math.floor(Math.random() * AVATARS.length)],
     coins: 80,
     levelIndex: 0,
+    best: 0,            // highest level ever reached (leaderboard score)
     bonusTotal: 0,
     sawTip: false,
     cur: null,          // mid-level progress: { idx, found: [], hinted: [], bonus: [] }
@@ -25,7 +26,16 @@ const ROOT_DEFAULTS = {
   sound: true,
   active: null,       // name of the active player
   players: {},        // name -> player object
+  deviceId: null,     // anonymous id for the global leaderboard
 };
+
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
 
 export function loadRoot() {
   let root;
@@ -45,6 +55,10 @@ export function loadRoot() {
       localStorage.removeItem(LEGACY_KEY);
     }
   } catch { /* ignore */ }
+  if (!root.deviceId) {
+    root.deviceId = uuid();
+    saveRoot(root);
+  }
   return root;
 }
 

@@ -9,7 +9,11 @@ kamarádům odkaz a hrajte.
 
 - Funguje na mobilu i na počítači (tah prstem / tažení myší).
 - Průběh hry se ukládá v prohlížeči (localStorage).
-- Po prvním načtení funguje i offline (PWA — lze přidat na plochu).
+- Na jednom zařízení může hrát víc lidí — každý pod svým jménem.
+- **Společný žebříček** všech hráčů napříč zařízeními (🏆 nahoře).
+- Nesprávné slovo lze nahlásit tlačítkem ⚑ (založí GitHub issue).
+- Po prvním načtení funguje i offline (PWA — lze přidat na plochu);
+  žebříček se v offline režimu přepne na hráče z tohoto zařízení.
 
 ## Jak hra funguje
 
@@ -18,6 +22,20 @@ kamarádům odkaz a hrajte.
   není, se počítá jako **bonusové slovo** (⭐) — každých 10 přinese mince.
 - **💡 (25 mincí)** odkryje náhodné písmeno, **🔨 (60 mincí)** odkryje
   políčko, které si vybereš. Mince dostáváš za dokončené úrovně.
+
+## Žebříček (Supabase)
+
+Skóre se ukládá do tabulky `leaderboard` v Supabase (free tier).
+`web/js/leaderboard.js` obsahuje URL projektu a veřejný **anon** klíč —
+ten je určen k publikování v klientském kódu, přístup hlídají RLS politiky
+v databázi (čtení a zápis skóre ano, mazání ne).
+
+Skóre = nejvyšší dosažená úroveň (`best`), takže restart hry o pozici
+v žebříčku nepřipraví. Zápis probíhá po dokončení úrovně a při odchodu
+ze stránky; když je hráč offline, žebříček zobrazí jen hráče z tohoto
+zařízení a skóre se dosynchronizuje později.
+
+Založení tabulky (SQL editor v Supabase) je popsáno v `docs/leaderboard.sql`.
 
 ## Struktura repozitáře
 
