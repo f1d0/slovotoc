@@ -22,6 +22,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORDLIST = process.env.WORDLIST ?? '/workspace/czech-wordlist/CZ-wordlist';
 const FREQLIST = process.env.FREQLIST ?? '/workspace/freqwords/content/2018/cs/cs_50k.txt';
 const HUNSPELL = process.env.HUNSPELL ?? '/workspace/cs_CZ.dic';
+const LEMMAS = process.env.LEMMAS ?? '/workspace/wikt-cs-lemmas.txt';
 const OUT = join(__dirname, '..', 'web', 'data', 'levels.json');
 
 const MIN_LEN = 3;
@@ -42,6 +43,9 @@ const TARGET_BLOCKLIST = new Set([
   'jane', 'dane', 'kate', 'katy', 'petře', 'anno', 'inch', 'copy',
   'lady', 'lord', 'lorda', 'miss', 'sir', 'okay', 'baby', 'core',
   'look', 'hot', 'stone', 'salt', 'net', 'star', 'jam', 'bat', 'pako', 'trip',
+  'dne', // mistagged as a headword in the Wiktionary extraction
+  'mne', 'mně', 'tebe', 'tobě', 'sebe', 'sobě', // pronoun case forms
+  'love', 'péro', 'osle', 'prso',
 ]);
 
 // Hand-picked friendly base words tried first in each tier, so early levels
@@ -81,11 +85,18 @@ function shuffled(arr) {
 
 // ---------- load data ----------
 console.error('Loading word data…');
+// Crossword target words are restricted to real dictionary headwords
+// (lemmas) extracted from Wiktionary via tools/extract-wikt-lemmas.mjs —
+// nouns in nominative, verbs in infinitive; never inflected forms like
+// "kol" or "jsme". Capitalized hunspell entries mark proper nouns.
 const properNouns = new Set();
 for (const line of readFileSync(HUNSPELL, 'utf8').split('\n')) {
   const entry = line.split('/')[0].trim();
   if (entry && /^[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]/.test(entry)) properNouns.add(entry.toLowerCase());
 }
+const lemmas = new Set(
+  readFileSync(LEMMAS, 'utf8').split('\n').map(w => w.trim()).filter(Boolean)
+);
 
 const valid = new Set(); // all accepted words (bonus validation pool)
 for (const line of readFileSync(WORDLIST, 'utf8').split('\n')) {
@@ -99,12 +110,15 @@ for (const line of readFileSync(FREQLIST, 'utf8').split('\n')) {
   if (w && valid.has(w)) freq.set(w, Number(c));
 }
 
-// Target pool: common + not a proper noun + not blocklisted.
+// Target pool: dictionary headwords only + common + not a proper noun +
+// not blocklisted. (Bonus words stay open to all valid inflected forms.)
 const targets = new Set();
 for (const [w, c] of freq) {
-  if (c >= MIN_FREQ_COUNT && !properNouns.has(w) && !TARGET_BLOCKLIST.has(w)) targets.add(w);
+  if (c >= MIN_FREQ_COUNT && lemmas.has(w) && !properNouns.has(w) && !TARGET_BLOCKLIST.has(w)) {
+    targets.add(w);
+  }
 }
-console.error(`valid=${valid.size} freq-matched=${freq.size} targets=${targets.size}`);
+console.error(`valid=${valid.size} lemmas=${lemmas.size} freq-matched=${freq.size} targets=${targets.size}`);
 
 // ---------- letter multiset helpers ----------
 const ALPHA = 'aábcčdďeéěfghiíjklmnňoópqrřsštťuúůvwxyýzž';

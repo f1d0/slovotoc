@@ -27,7 +27,13 @@ kamarádům odkaz a hrajte.
   křížovky, bonusová slova).
 - `tools/` — offline generátor úrovní (Node 18+):
   - `wordfilter.mjs` — filtr slovníku (znaky, délka, dětem přátelský obsah),
+  - `extract-wikt-lemmas.mjs` — extrakce slovníkových hesel z Wikislovníku,
   - `generate-levels.mjs` — výběr slov + skládání křížovek.
+
+Slova v křížovce jsou výhradně **slovníková hesla** (podstatná jména
+v 1. pádě, slovesa v infinitivu…) z anglického Wikislovníku pro češtinu;
+tvary jako „kol" nebo „jsme" se v mřížce nikdy neobjeví. Bonusová slova
+jsou benevolentnější a přijímají i vyskloňované tvary.
 
 ### Přegenerování úrovní
 
@@ -37,13 +43,17 @@ git clone --depth 1 https://github.com/filip-opalka/czech-wordlist /workspace/cz
 git clone --depth 1 --filter=blob:none --sparse https://github.com/hermitdave/FrequencyWords /workspace/freqwords
 (cd /workspace/freqwords && git sparse-checkout set content/2018/cs)
 curl -L -o /workspace/cs_CZ.dic https://raw.githubusercontent.com/LibreOffice/dictionaries/master/cs_CZ/cs_CZ.dic
+curl -L -o /workspace/kaikki-cs.jsonl https://kaikki.org/dictionary/Czech/kaikki.org-dictionary-Czech.jsonl
 
-node tools/generate-levels.mjs   # zapíše web/data/levels.json + QA výpis
+node tools/extract-wikt-lemmas.mjs   # slovníková hesla → /workspace/wikt-cs-lemmas.txt
+node tools/generate-levels.mjs       # zapíše web/data/levels.json + QA výpis
 ```
 
 ## Poděkování / licence dat
 
-- Český slovník: [filip-opalka/czech-wordlist](https://github.com/filip-opalka/czech-wordlist)
+- Slovníková hesla: [Wikislovník (en.wiktionary, čeština)](https://en.wiktionary.org)
+  přes extrakci [kaikki.org](https://kaikki.org/dictionary/Czech/) (CC BY-SA / GFDL).
+- Český slovník tvarů: [filip-opalka/czech-wordlist](https://github.com/filip-opalka/czech-wordlist)
   (odvozeno z hunspell `cs_CZ`, GPL) a [LibreOffice dictionaries](https://github.com/LibreOffice/dictionaries) (GPL).
 - Frekvenční seznam: [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords)
   (z korpusu OpenSubtitles, CC-BY-SA 4.0).
