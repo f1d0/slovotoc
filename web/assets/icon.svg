@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2b3a75"/>
+      <stop offset="1" stop-color="#4a2a72"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="168" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.22)" stroke-width="6"/>
+  <!-- rope through three letters -->
+  <polyline points="256,120 138,324 374,324" fill="none" stroke="#ffc93c" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
+  <!-- letter tiles -->
+  <g font-family="Arial, Helvetica, sans-serif" font-weight="900" text-anchor="middle">
+    <circle cx="256" cy="120" r="62" fill="#ffffff"/>
+    <text x="256" y="146" font-size="76" fill="#2b3050">S</text>
+    <circle cx="138" cy="324" r="62" fill="#ffc93c"/>
+    <text x="138" y="350" font-size="76" fill="#5c3d00">L</text>
+    <circle cx="374" cy="324" r="62" fill="#ffffff"/>
+    <text x="374" y="350" font-size="76" fill="#2b3050">O</text>
+  </g>
+</svg>
