@@ -26,6 +26,10 @@ function timeoutSignal() {
 // hasn't got those columns yet the game keeps working on the older schema
 // instead of failing to sync at all.
 let extendedSchema = true;
+// Identity is the player's name once docs/leaderboard-migrace.sql has run.
+// Until then the database still keys rows by (device_id, name), so the
+// client works either way instead of failing to sync.
+let nameIsKey = true;
 
 export async function pushScore({ deviceId, name, avatar, levels, bonus, coins, stars, streak }) {
   const base = {
@@ -37,9 +41,9 @@ export async function pushScore({ deviceId, name, avatar, levels, bonus, coins, 
     coins,
     updated_at: new Date().toISOString(),
   };
-  const send = async withExtras => {
+  const send = async (withExtras, byName) => {
     const row = withExtras ? { ...base, stars, streak } : base;
-    return fetch(`${URL}?on_conflict=device_id,name`, {
+    return fetch(`${URL}?on_conflict=${byName ? 'name' : 'device_id,name'}`, {
       method: 'POST',
       headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates' },
       body: JSON.stringify([row]),
@@ -47,12 +51,28 @@ export async function pushScore({ deviceId, name, avatar, levels, bonus, coins, 
     });
   };
 
-  let res = await send(extendedSchema);
+  let res = await send(extendedSchema, nameIsKey);
+  if (!res.ok && nameIsKey && (res.status === 400 || res.status === 409)) {
+    nameIsKey = false; // migration not applied yet
+    res = await send(extendedSchema, false);
+  }
   if (!res.ok && extendedSchema && res.status === 400) {
-    extendedSchema = false; // unknown column – fall back for this session
-    res = await send(false);
+    extendedSchema = false; // unknown column
+    res = await send(false, nameIsKey);
   }
   if (!res.ok) throw new Error(`pushScore ${res.status}`);
+}
+
+// Look a player up by name so a new device can continue their game.
+export async function fetchPlayer(name) {
+  const cols = extendedSchema
+    ? 'name,avatar,levels,bonus,coins,stars,streak'
+    : 'name,avatar,levels,bonus,coins';
+  const res = await fetch(`${URL}?select=${cols}&name=eq.${encodeURIComponent(name)}&limit=1`,
+    { headers: HEADERS, signal: timeoutSignal() });
+  if (!res.ok) throw new Error(`fetchPlayer ${res.status}`);
+  const rows = await res.json();
+  return rows[0] ?? null;
 }
 
 export async function fetchTop(limit = 100) {

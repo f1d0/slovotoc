@@ -1,7 +1,7 @@
 // Slovotoč – main game flow.
 
 import { loadRoot, saveRoot, newPlayer, claimLegacy, AVATARS } from './state.js';
-import { pushScore, fetchTop } from './leaderboard.js';
+import { pushScore, fetchTop, fetchPlayer } from './leaderboard.js';
 import { Wheel, UC } from './wheel.js';
 import { Grid } from './grid.js';
 import { confettiBurst } from './confetti.js';
@@ -836,6 +836,48 @@ function showRules(back) {
   $('#ov-back').onclick = back;
 }
 
+// Copies a player's progress from the shared board onto this device, so the
+// same person can carry on from a different phone or browser.
+function adoptPlayer(row) {
+  const p = newPlayer(row.name, row.avatar || undefined);
+  p.levelIndex = Math.min(row.levels ?? 0, LEVELS.length - 1);
+  p.best = row.levels ?? 0;
+  p.coins = row.coins ?? p.coins;
+  p.bonusTotal = row.bonus ?? 0;
+  if (row.streak) p.daily = { day: null, streak: row.streak };
+  p.lastPlayed = Date.now();
+  root.players[row.name] = p;
+  saveRoot(root);
+  startAs(row.name);
+  toast(`Vítej zpátky, ${row.name}! Pokračuješ na úrovni ${p.levelIndex + 1}.`, 3000);
+}
+
+async function fillRemotePlayers() {
+  const box = $('#remote-box');
+  if (!box) return;
+  try {
+    const rows = await fetchTop();
+    const mine = new Set(Object.keys(root.players));
+    const others = rows.filter(r => !mine.has(r.name) && (r.levels ?? 0) > 0);
+    if (!others.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `
+      <p class="picker-sub">Hraješ už na jiném telefonu? Vyber se a pokračuj:</p>
+      <div class="player-list">
+        ${others.map(r => `<button class="player-chip remote" data-name="${esc(r.name)}">
+            <em>${r.avatar ?? '🙂'}</em><b>${esc(r.name)}</b><span>úroveň ${(r.levels ?? 0) + 1}</span>
+          </button>`).join('')}
+      </div>`;
+    for (const chip of box.querySelectorAll('.player-chip')) {
+      chip.onclick = () => {
+        const row = others.find(r => r.name === chip.dataset.name);
+        if (row) adoptPlayer(row);
+      };
+    }
+  } catch {
+    box.innerHTML = '';
+  }
+}
+
 function showPlayerPicker(intro = false) {
   const names = Object.keys(root.players)
     .sort((a, b) => (root.players[b].lastPlayed ?? 0) - (root.players[a].lastPlayed ?? 0));
@@ -853,12 +895,14 @@ function showPlayerPicker(intro = false) {
         </button>`;
       }).join('')}
     </div>` : `<p>${intro ? 'Zadej jméno a pojď hrát — žádná registrace, žádné reklamy.' : 'Zadej své jméno a pojď hrát!'}</p>`}
+    <div id="remote-box"></div>
     <div class="new-player">
       <input id="np-name" type="text" maxlength="14" placeholder="${names.length ? 'Nový hráč – jméno' : 'Tvoje jméno'}" autocomplete="off" />
       <button class="big-btn" id="np-go">Hrát</button>
     </div>
     <button class="ghost-btn" id="ov-rules">❓ Jak se hraje</button>
   `);
+  fillRemotePlayers();
   $('#ov-rules').onclick = () => showRules(() => showPlayerPicker(intro));
   for (const chip of els.overlayCard.querySelectorAll('.player-chip')) {
     chip.onclick = () => {
@@ -868,9 +912,23 @@ function showPlayerPicker(intro = false) {
     };
   }
   const input = $('#np-name');
-  const go = () => {
+  const go = async () => {
     const name = input.value.trim();
     if (!name) { input.focus(); return; }
+    // Typing a name that already exists on the shared board continues that
+    // player rather than starting a second, empty profile with the same name.
+    if (!root.players[name]) {
+      const btn = $('#np-go');
+      const label = btn.textContent;
+      btn.textContent = 'Hledám…';
+      btn.disabled = true;
+      try {
+        const row = await fetchPlayer(name);
+        if (row && (row.levels ?? 0) > 0) return adoptPlayer(row);
+      } catch { /* offline – start a fresh profile below */ }
+      btn.textContent = label;
+      btn.disabled = false;
+    }
     if (!root.players[name]) {
       const used = new Set(Object.values(root.players).map(p => p.avatar));
       const free = AVATARS.filter(a => !used.has(a));

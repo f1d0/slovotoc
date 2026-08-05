@@ -560,6 +560,13 @@ body {
   transition: background 0.15s;
 }
 .player-chip:active { background: rgba(255, 255, 255, 0.22); }
+.player-chip.remote { border-style: dashed; border-color: rgba(255, 201, 60, 0.5); }
+.picker-sub {
+  font-size: 12.5px;
+  opacity: 0.75;
+  margin: 14px 0 6px;
+  text-align: left;
+}
 .player-chip em { font-style: normal; font-size: 22px; }
 .player-chip b { flex: 1; font-size: 16px; font-weight: 900; }
 .player-chip span { font-size: 12px; opacity: 0.75; font-weight: 700; }
