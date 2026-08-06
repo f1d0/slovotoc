@@ -420,7 +420,10 @@ for (const tier of TIERS) {
     if (!lay.placed.some(p => p.w === base)) continue;
 
     const placedSet = new Set(lay.placed.map(p => p.w));
-    const bonus = subs.filter(w => !placedSet.has(w) && !TARGET_BLOCKLIST.has(w)).sort();
+    // The blocklist only decides what may appear IN the crossword. Bonus
+    // words must stay as permissive as the dictionary allows, otherwise the
+    // game rejects perfectly ordinary Czech ("sto", "kra", "kol").
+    const bonus = subs.filter(w => !placedSet.has(w)).sort();
 
     levels.push({
       letters: base,

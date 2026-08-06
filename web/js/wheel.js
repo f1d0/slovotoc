@@ -41,8 +41,37 @@ export class Wheel {
       return b;
     });
     this.slots = this.letters.map((_, i) => i);
+    this.scramble();
     this.layout(false);
     this.drawRope();
+  }
+
+  // The wheel is built from the base word, so leaving the letters in their
+  // natural order puts the longest answer around the rim in one sweep — the
+  // hardest word becomes the easiest. Start from a scrambled arrangement.
+  isSequential() {
+    const n = this.slots.length;
+    if (n < 3) return false;
+    for (const dir of [1, -1]) {
+      const start = this.slots[0];
+      let ok = true;
+      for (let i = 1; i < n; i++) {
+        if (this.slots[i] !== (((start + dir * i) % n) + n) % n) { ok = false; break; }
+      }
+      if (ok) return true;
+    }
+    return false;
+  }
+
+  scramble() {
+    const n = this.slots.length;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      for (let i = n - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [this.slots[i], this.slots[j]] = [this.slots[j], this.slots[i]];
+      }
+      if (!this.isSequential()) return;
+    }
   }
 
   layout(animate = true) {
@@ -72,11 +101,7 @@ export class Wheel {
 
   shuffle() {
     if (this.selected.length || !this.enabled) return false;
-    const n = this.slots.length;
-    for (let i = n - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [this.slots[i], this.slots[j]] = [this.slots[j], this.slots[i]];
-    }
+    this.scramble();
     this.layout(true);
     sndShuffle();
     return true;
