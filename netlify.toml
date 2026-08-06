@@ -1,0 +1,16 @@
+# The game is a static site with no build step; everything lives in web/.
+# Used when deploying to Netlify (GitHub Pages remains the primary host).
+
+[build]
+  publish = "web"
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
