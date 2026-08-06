@@ -6,6 +6,15 @@ import { sndTick, sndShuffle } from './audio.js';
 
 const UC = s => s.toLocaleUpperCase('cs-CZ');
 
+// Accent tiles (prototype, see docs/navrh-diakritika.md). A modifier applies
+// to the NEXT letter dragged; on a letter that cannot take it, it silently
+// falls away instead of counting as a mistake.
+export const ACCENTS = {
+  '´': { a: 'á', e: 'é', i: 'í', o: 'ó', u: 'ú', y: 'ý' },
+  'ˇ': { c: 'č', d: 'ď', e: 'ě', n: 'ň', r: 'ř', s: 'š', t: 'ť', z: 'ž' },
+  '°': { u: 'ů' },
+};
+
 export class Wheel {
   constructor(wheelEl, ropeSvg, { onChange, onSubmit } = {}) {
     this.el = wheelEl;
@@ -27,20 +36,26 @@ export class Wheel {
     window.addEventListener('resize', () => this.layout());
   }
 
-  setLetters(letters) {
+  // `mods` (optional) adds accent tiles to the ring: ['´', 'ˇ', '°']
+  setLetters(letters, { mods = [] } = {}) {
     this.letters = [...letters];
+    this.mods = mods;
+    this.items = [
+      ...this.letters.map(ch => ({ kind: 'letter', ch })),
+      ...mods.map(mark => ({ kind: 'mod', mark })),
+    ];
     this.selected = [];
     this.dragging = false;
     for (const b of this.buttons) b.remove();
-    this.buttons = this.letters.map((ch, i) => {
+    this.buttons = this.items.map((it, i) => {
       const b = document.createElement('button');
-      b.className = 'wheel-letter';
-      b.textContent = UC(ch);
+      b.className = 'wheel-letter' + (it.kind === 'mod' ? ' mod' : '');
+      b.textContent = it.kind === 'mod' ? it.mark : UC(it.ch);
       b.dataset.i = i;
       this.el.appendChild(b);
       return b;
     });
-    this.slots = this.letters.map((_, i) => i);
+    this.slots = this.items.map((_, i) => i);
     this.scramble();
     this.layout(false);
     this.drawRope();
@@ -77,7 +92,7 @@ export class Wheel {
   layout(animate = true) {
     const S = this.el.clientWidth;
     if (!S) return;
-    const n = this.letters.length;
+    const n = this.items.length;
     const R = S * 0.36;
     this.centers = [];
     for (let i = 0; i < n; i++) {
@@ -113,7 +128,16 @@ export class Wheel {
   }
 
   word() {
-    return this.selected.map(i => this.letters[i]).join('');
+    let pending = null;
+    let out = '';
+    for (const i of this.selected) {
+      const it = this.items[i];
+      if (it.kind === 'mod') { pending = it.mark; continue; }
+      const mapped = pending ? ACCENTS[pending]?.[it.ch] : null;
+      out += mapped ?? it.ch;   // an accent that doesn't fit just falls away
+      pending = null;
+    }
+    return out;
   }
 
   clear() {
@@ -161,9 +185,9 @@ export class Wheel {
       if (sel.length >= 2 && i === sel[sel.length - 2]) {
         // moved back onto the previous letter → undo last selection
         const popped = sel.pop();
-        this.buttons[popped].classList.remove('sel');
+        if (!sel.includes(popped)) this.buttons[popped].classList.remove('sel');
         this.onChange(this.word());
-      } else if (!sel.includes(i)) {
+      } else if (this.canSelect(i)) {
         this.select(i);
       }
     }
@@ -184,6 +208,12 @@ export class Wheel {
   cancel() {
     if (this.dragging || this.selected.length) this.clear();
     this.pointer = null;
+  }
+
+  canSelect(i) {
+    const it = this.items[i];
+    if (it.kind === 'mod') return this.selected[this.selected.length - 1] !== i;
+    return !this.selected.includes(i);
   }
 
   select(i) {
