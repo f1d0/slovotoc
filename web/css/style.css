@@ -40,6 +40,10 @@ html, body {
   overscroll-behavior: none;
 }
 
+/* Whatever the browser leaves uncovered – the home-indicator strip on iOS –
+   must be the game's own dark, never the default white canvas. */
+html { background: var(--c1); }
+
 body {
   font-family: 'Nunito', 'Segoe UI', system-ui, sans-serif;
   background: linear-gradient(165deg, var(--c1) 0%, var(--c2) 100%);
@@ -64,12 +68,18 @@ body {
 }
 
 /* ---------- decorative background ---------- */
-/* Bleeds back out over #app's safe-area padding, so the photo runs under the
-   status bar and the notch instead of stopping at a hard edge. */
+/* Pinned to the viewport rather than to #app, so the photo covers the notch
+   and the home-indicator strip whatever height #app works out to. Width still
+   tracks the app column, so the desktop layout is unchanged. */
 .bg {
-  position: absolute;
-  inset: calc(-1 * env(safe-area-inset-top)) calc(-1 * env(safe-area-inset-right))
-         calc(-1 * env(safe-area-inset-bottom)) calc(-1 * env(safe-area-inset-left));
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 520px;
+  z-index: 0;
   overflow: hidden;
   pointer-events: none;
 }
