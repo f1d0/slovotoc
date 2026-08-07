@@ -26,6 +26,15 @@ const LEMMAS = process.env.LEMMAS ?? '/workspace/cs-lemmas.txt';
 const OUT = join(__dirname, '..', 'web', 'data', 'levels.json');
 
 const MIN_LEN = 3;
+
+// The wheel carries BARE letters; a word counts if its de-accented form fits.
+// KRIDLO therefore yields KŘÍDLO, DÍLO, LOĎ, KÓD… roughly doubling the pool,
+// which is why the wheels are one tile smaller than before.
+export const FOLD = {
+  'á': 'a', 'č': 'c', 'ď': 'd', 'é': 'e', 'ě': 'e', 'í': 'i', 'ň': 'n',
+  'ó': 'o', 'ř': 'r', 'š': 's', 'ť': 't', 'ú': 'u', 'ů': 'u', 'ý': 'y', 'ž': 'z',
+};
+const fold = w => [...w].map(c => FOLD[c] ?? c).join('');
 const MIN_FREQ_COUNT = 150;    // min subtitle-corpus count for target words
 const MAX_SHORT_PER_LEVEL = 3; // at most this many 3-letter answers per grid
 
@@ -137,18 +146,20 @@ function fitsIn(wordCounts, baseCounts) {
 // Precompute masks+counts for the whole valid pool, bucketed by length.
 const pool = [];
 for (const w of valid) {
-  const [lo, hi] = mask(w);
-  pool.push({ w, lo, hi, c: counts(w) });
+  const f = fold(w);
+  const [flo, fhi] = mask(f);
+  pool.push({ w, flo, fhi, fc: counts(f) });
 }
 
+// `base` is already folded; entries are matched by their folded form.
 function subwordsOf(base) {
   const bc = counts(base);
   const [blo, bhi] = mask(base);
   const res = [];
   for (const e of pool) {
     if (e.w.length > base.length) continue;
-    if ((e.lo & blo) !== e.lo || (e.hi & bhi) !== e.hi) continue;
-    if (fitsIn(e.c, bc)) res.push(e.w);
+    if ((e.flo & blo) !== e.flo || (e.fhi & bhi) !== e.fhi) continue;
+    if (fitsIn(e.fc, bc)) res.push(e.w);
   }
   return res;
 }
@@ -157,13 +168,11 @@ import { tryLayout, bestLayout, setRandom, MAX_GRID } from './layout.mjs';
 
 // ---------- base word selection & level construction ----------
 const TIERS = [
-  // A much steeper ramp: players reported 4-letter wheels still showing up
-  // around level 15, which is far too easy for adults.
   { count: 6,   baseLen: 4, words: [3, 4],   maxGrid: 9,  tries: 40 },
-  { count: 14,  baseLen: 5, words: [4, 6],   maxGrid: 9,  tries: 45 },
-  { count: 30,  baseLen: 6, words: [6, 8],   maxGrid: 10, tries: 55 },
-  { count: 70,  baseLen: 7, words: [8, 10],  maxGrid: 11, tries: 70 },
-  { count: 120, baseLen: 8, words: [9, 12],  maxGrid: 12, tries: 90 },
+  { count: 20,  baseLen: 5, words: [5, 7],   maxGrid: 10, tries: 50 },
+  { count: 60,  baseLen: 6, words: [7, 9],   maxGrid: 11, tries: 60 },
+  { count: 120, baseLen: 7, words: [9, 11],  maxGrid: 12, tries: 80 },
+  { count: 34,  baseLen: 8, words: [10, 12], maxGrid: 12, tries: 90 },
 ];
 
 // Cesta po českých památkách a zajímavých místech. Menší města jsou
@@ -235,10 +244,11 @@ for (const tier of TIERS) {
   const cands = baseCandidates.get(tier.baseLen);
   for (const base of cands) {
     if (made >= tier.count) break;
-    const sig = signature(base);
+    const bare = fold(base);
+    const sig = signature(bare);
     if (usedBases.has(sig) || usedBaseWords.has(base)) continue;
 
-    const subs = subwordsOf(base);
+    const subs = subwordsOf(bare);
     const targetSubs = subs
       .filter(w => targets.has(w) && w !== base && (usedCount.get(w) ?? 0) < reuseCap(w))
       // fresh words first, then the most common ones
@@ -285,7 +295,7 @@ for (const tier of TIERS) {
     const bonus = subs.filter(w => !placedSet.has(w)).sort();
 
     levels.push({
-      letters: base,
+      letters: bare,   // bare tiles; answers keep their accents
       words: lay.placed,
       bonus,
       gw: lay.w, gh: lay.h,

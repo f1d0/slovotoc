@@ -750,3 +750,7 @@ body {
   :root { --wheel-size: min(66vw, 250px, 34vh); }
   #word-slot { height: 38px; }
 }
+
+/* picking between words that share a bare spelling (může / muže) */
+.choice-list { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
+.choice-list .big-btn { margin-top: 0; }

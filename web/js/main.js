@@ -20,6 +20,15 @@ const STAR3_BONUS_WORDS = 3;     // bonus words needed for the third star
 const DAILY_REWARD = 40;         // coins for finishing the daily challenge
 const REPO_URL = 'https://github.com/f1d0/wowczechversion';
 
+// The wheel carries bare letters, so a word is matched by its de-accented
+// form and the accents are written in for the player ("Klasik"). Only when
+// the bare spelling fits several words (může/muže) do we have to ask.
+const FOLD = {
+  'á': 'a', 'č': 'c', 'ď': 'd', 'é': 'e', 'ě': 'e', 'í': 'i', 'ň': 'n',
+  'ó': 'o', 'ř': 'r', 'š': 's', 'ť': 't', 'ú': 'u', 'ů': 'u', 'ý': 'y', 'ž': 'z',
+};
+const fold = w => [...w].map(c => FOLD[c] ?? c).join('');
+
 // one gradient theme per pack (cycled if there are more packs)
 const THEMES = [
   ['#1b2547', '#3c2a63'], ['#0f3057', '#00587a'], ['#2d1e50', '#7a3b69'],
@@ -312,6 +321,55 @@ function bonusFound(word) {
   });
 }
 
+function candidatesFor(word) {
+  const f = fold(word);
+  return [...level.words.map(p => p.w), ...level.bonus].filter(w => fold(w) === f);
+}
+
+function acceptWord(word) {
+  lastWord = word;
+  lastWordAccepted = true;
+  if (grid.wordCells.has(word)) {
+    if (found.has(word)) {
+      sndDupe();
+      pillResult('dupe', 350);
+      grid.pulseWord(word);
+    } else {
+      wordFound(word);
+    }
+  } else if (foundBonus.has(word)) {
+    sndDupe();
+    pillResult('dupe', 350);
+    els.jar.classList.remove('wiggle');
+    void els.jar.offsetWidth;
+    els.jar.classList.add('wiggle');
+  } else {
+    bonusFound(word);
+  }
+  offerReport();
+}
+
+function chooseWord(options, typed) {
+  busy = true;
+  wheel.setEnabled(false);
+  showOverlay(`
+    <h2>Které slovo myslíš?</h2>
+    <p>Bez háčků a čárek sedí <b>${esc(UC(typed))}</b> na víc slov.</p>
+    <div class="choice-list">
+      ${options.map(w => `<button class="big-btn choice" data-w="${esc(w)}">${esc(UC(w))}</button>`).join('')}
+    </div>
+    <button class="ghost-btn" id="ch-cancel">Zpět</button>`);
+  const close = () => {
+    hideOverlay();
+    busy = false;
+    wheel.setEnabled(true);
+  };
+  for (const b of els.overlayCard.querySelectorAll('.choice')) {
+    b.onclick = () => { close(); showPill(b.dataset.w); acceptWord(b.dataset.w); };
+  }
+  $('#ch-cancel').onclick = close;
+}
+
 function submitWord(raw) {
   const word = raw.toLowerCase();
   wheel.clear();
@@ -321,32 +379,32 @@ function submitWord(raw) {
     return;
   }
   lastWord = word;
-  if (grid.wordCells.has(word)) {
-    lastWordAccepted = true;
-    if (found.has(word)) {
-      sndDupe();
-      pillResult('dupe', 350);
-      grid.pulseWord(word);
-    } else {
-      wordFound(word);
-    }
-  } else if (level.bonus.includes(word)) {
-    lastWordAccepted = true;
-    if (foundBonus.has(word)) {
-      sndDupe();
-      pillResult('dupe', 350);
-      els.jar.classList.remove('wiggle');
-      void els.jar.offsetWidth;
-      els.jar.classList.add('wiggle');
-    } else {
-      bonusFound(word);
-    }
-  } else {
+
+  const cands = candidatesFor(word);
+  if (!cands.length) {
     lastWordAccepted = false;
     sndBad();
     pillResult('bad', 450);
+    offerReport();
+    return;
   }
-  offerReport();
+  // A crossword answer always wins over a bonus word that happens to share
+  // the same bare spelling — otherwise typing ZELENA banks a bonus instead
+  // of filling ZELENÁ into the grid.
+  const gridUnfound = cands.filter(w => grid.wordCells.has(w) && !found.has(w));
+  if (gridUnfound.length === 1) return acceptWord(gridUnfound[0]);
+  if (gridUnfound.length > 1) return chooseWord(gridUnfound, word);
+
+  if (cands.includes(word)) return acceptWord(word);
+
+  const unseen = cands.filter(w => !found.has(w) && !foundBonus.has(w));
+  const pool = unseen.length ? unseen : cands;
+  if (pool.length === 1) {
+    showPill(pool[0]);
+    if (pool[0] !== word) toast(`✍️ ${UC(word)} → ${UC(pool[0])}`, 1600);
+    return acceptWord(pool[0]);
+  }
+  chooseWord(pool, word);
 }
 
 // ---------- word reporting ----------
@@ -849,6 +907,7 @@ const LOGO = `
 
 const RULES = [
   ['👆', 'Spoj písmena', 'Ve spodním kruhu táhni prstem (nebo myší) přes písmena a slož z nich slovo. Puštěním ho odešleš.'],
+  ['ˇ', 'Háčky a čárky píše hra', 'Na kolečku jsou písmena bez diakritiky. Napiš KRIDLO a hra z toho udělá KŘÍDLO. Když holý tvar sedí na víc slov, zeptá se.'],
   ['🧩', 'Vyplň křížovku', 'Když slovo v křížovce je, jeho písmena vlétnou do mřížky. Úroveň končí, jakmile je mřížka celá plná.'],
   ['⭐', 'Bonusová slova', 'Najdeš-li platné české slovo, které v křížovce není, počítá se jako bonus. Za každých 10 bonusů dostaneš mince.'],
   ['💡', 'Nápovědy', 'Žárovka (25 mincí) odkryje náhodné písmeno, kladivo (60 mincí) políčko, které si vybereš. Mince získáváš za dokončené úrovně.'],
