@@ -1,6 +1,6 @@
 // Slovotoč service worker – cache-first for same-origin assets so the game
 // works offline after the first visit.
-const CACHE = 'slovotoc-v18';
+const CACHE = 'slovotoc-v19';
 const CORE = [
   './',
   './index.html',
@@ -14,6 +14,9 @@ const CORE = [
   './js/confetti.js',
   './data/levels.json',
   './assets/icon.svg',
+  './assets/icon-192.png',
+  './assets/icon-512.png',
+  './assets/apple-touch-icon.png',
   './assets/fonts/nunito-latin.woff2',
   './assets/fonts/nunito-latin-ext.woff2',
   './manifest.webmanifest',
