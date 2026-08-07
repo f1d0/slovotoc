@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#1b2547" />
+  <!-- Without these iOS draws its own opaque white status bar above the game.
+       "black-translucent" lets the page run under it instead; #app already
+       keeps the content clear with a safe-area inset. -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Slovotoč" />
   <meta name="description" content="Slovotoč – česká slovní hra. Spojuj písmena, hledej slova a vyplň křížovku." />
   <title>Slovotoč</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />

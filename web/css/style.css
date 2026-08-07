@@ -64,7 +64,15 @@ body {
 }
 
 /* ---------- decorative background ---------- */
-.bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+/* Bleeds back out over #app's safe-area padding, so the photo runs under the
+   status bar and the notch instead of stopping at a hard edge. */
+.bg {
+  position: absolute;
+  inset: calc(-1 * env(safe-area-inset-top)) calc(-1 * env(safe-area-inset-right))
+         calc(-1 * env(safe-area-inset-bottom)) calc(-1 * env(safe-area-inset-left));
+  overflow: hidden;
+  pointer-events: none;
+}
 /* faint photo of the current pack's place, behind everything */
 #bg-photo {
   position: absolute;
