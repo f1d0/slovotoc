@@ -49,7 +49,10 @@ export class Grid {
     const gap = 4;
     const { gw, gh } = this.level;
     const size = Math.floor(Math.min((bw - gap * (gw - 1)) / gw, (bh - gap * (gh - 1)) / gh));
-    const cell = Math.max(20, Math.min(54, size));
+    // The upper bound used to be 54, which left a big empty band between the
+    // crossword and the wheel on a large phone – the grid simply could not
+    // grow into the space the board was giving it.
+    const cell = Math.max(20, Math.min(62, size));
     this.el.style.setProperty('--cell', cell + 'px');
     return cell;
   }
