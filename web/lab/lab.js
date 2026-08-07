@@ -30,6 +30,7 @@ let idx = 0;
 let level = null, grid = null;
 let found = new Set(), foundBonus = new Set();
 let busy = false, toastTimer = null;
+let mode = localStorage.getItem('slovotoc-lab-mode') ?? 'satellites';
 
 function toast(msg, ms = 2000) {
   els.toast.textContent = msg;
@@ -213,8 +214,16 @@ function go(n) {
   els.bonusCount.textContent = '0';
   grid = new Grid(els.grid, level);
   grid.fit(els.board);
-  const mods = ['´', 'ˇ', ...(level.needsRing ? ['°'] : [])];
-  wheel.setLetters([...level.letters], { mods });
+  const mods = mode === 'tiles' ? ['´', 'ˇ', ...(level.needsRing ? ['°'] : [])] : [];
+  wheel.setLetters([...level.letters], { mods, accentMode: mode });
+  document.getElementById('hint-tip').innerHTML = {
+    none: 'Piš <b>bez háčků</b> — hra je doplní sama',
+    satellites: 'Podrž písmeno a nakloň prst na <b>bublinu</b> vedle něj',
+    tiles: 'Háček a čárku táhni <b>před</b> písmenem',
+  }[mode];
+  for (const b of document.querySelectorAll('#mode-bar button')) {
+    b.classList.toggle('on', b.dataset.mode === mode);
+  }
   wheel.setEnabled(true);
   updateWordsLeft();
 }
@@ -222,6 +231,13 @@ function go(n) {
 const wheel = new Wheel(els.wheel, els.rope, { onChange: showPill, onSubmit: submit });
 els.shuffle.addEventListener('click', () => { unlock(); wheel.shuffle(); });
 els.prev.addEventListener('click', () => go(idx - 1));
+for (const b of document.querySelectorAll('#mode-bar button')) {
+  b.addEventListener('click', () => {
+    mode = b.dataset.mode;
+    localStorage.setItem('slovotoc-lab-mode', mode);
+    go(idx);
+  });
+}
 els.next.addEventListener('click', () => go(idx + 1));
 els.jar.addEventListener('click', () => {
   const list = [...foundBonus].sort((a, b) => a.localeCompare(b, 'cs'));
@@ -236,6 +252,7 @@ LEVELS = (await res.json()).levels;
 go(0);
 
 window.__lab = {
+  wheel,
   submit: w => submit(w),
   state: () => ({ letters: level.letters, found: [...found], bonus: [...foundBonus], idx }),
   level: () => level,

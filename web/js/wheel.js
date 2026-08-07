@@ -36,8 +36,13 @@ export class Wheel {
     window.addEventListener('resize', () => this.layout());
   }
 
-  // `mods` (optional) adds accent tiles to the ring: ['´', 'ˇ', '°']
-  setLetters(letters, { mods = [] } = {}) {
+  // `mods` puts accent tiles in the ring ('tiles' input style).
+  // `accentMode`: 'none' (bare letters only) | 'tiles' | 'satellites'
+  setLetters(letters, { mods = [], accentMode = 'none' } = {}) {
+    this.accentMode = accentMode;
+    this.sats = [];
+    this.satEls = [];
+    this.lastSat = null;
     this.letters = [...letters];
     this.mods = mods;
     this.items = [
@@ -130,10 +135,11 @@ export class Wheel {
   word() {
     let pending = null;
     let out = '';
-    for (const i of this.selected) {
-      const it = this.items[i];
+    for (const sel of this.selected) {
+      const it = this.items[sel.i];
       if (it.kind === 'mod') { pending = it.mark; continue; }
-      const mapped = pending ? ACCENTS[pending]?.[it.ch] : null;
+      const mark = sel.accent ?? pending;
+      const mapped = mark ? ACCENTS[mark]?.[it.ch] : null;
       out += mapped ?? it.ch;   // an accent that doesn't fit just falls away
       pending = null;
     }
@@ -142,10 +148,66 @@ export class Wheel {
 
   clear() {
     this.selected = [];
+    this.hideSatellites();
     this.dragging = false;
     for (const b of this.buttons) b.classList.remove('sel');
     this.drawRope();
     this.onChange('');
+  }
+
+  // ---- accent satellites ----
+  // Travelling across the wheel to a separate accent tile is what made the
+  // gesture error-prone, so the accents appear right next to the letter you
+  // are standing on: a ~30px nudge outwards instead of a trip through the hub.
+  hideSatellites() {
+    for (const el of this.satEls ?? []) el.remove();
+    this.satEls = [];
+    this.sats = [];
+  }
+
+  showSatellites(i) {
+    this.hideSatellites();
+    if (this.accentMode !== 'satellites' || i < 0) return;
+    const it = this.items[i];
+    if (!it || it.kind !== 'letter') return;
+    const marks = Object.keys(ACCENTS).filter(m => ACCENTS[m][it.ch]);
+    if (!marks.length) return;
+
+    const S = this.el.clientWidth;
+    const c = this.centers[i];
+    const base = Math.atan2(c.y - S / 2, c.x - S / 2);
+    const R = S * 0.36 + S * 0.145;
+    const spread = marks.length === 1 ? [0] : marks.length === 2 ? [-0.30, 0.30] : [-0.42, 0, 0.42];
+    marks.forEach((mark, k) => {
+      const a = base + spread[k];
+      const x = S / 2 + R * Math.cos(a);
+      const y = S / 2 + R * Math.sin(a);
+      const b = document.createElement('button');
+      b.className = 'wheel-sat';
+      b.textContent = UC(ACCENTS[mark][it.ch]);
+      b.style.transform = `translate(${x}px, ${y}px)`;
+      this.el.appendChild(b);
+      this.satEls.push(b);
+      this.sats.push({ x, y, mark, el: b });
+    });
+  }
+
+  hitSatellite(px, py) {
+    const S = this.el.clientWidth;
+    const r = S * 0.105;
+    for (const s of this.sats ?? []) {
+      if (Math.hypot(px - s.x, py - s.y) < r) return s;
+    }
+    return null;
+  }
+
+  applyAccent(sat) {
+    const last = this.selected[this.selected.length - 1];
+    if (!last || this.items[last.i]?.kind !== 'letter') return;
+    last.accent = last.accent === sat.mark ? null : sat.mark;   // tap again to undo
+    for (const s of this.sats) s.el.classList.toggle('on', s.mark === last.accent);
+    sndTick(this.selected.length);
+    this.onChange(this.word());
   }
 
   // ---- pointer handling ----
@@ -155,7 +217,7 @@ export class Wheel {
     const py = e.clientY - r.top;
     this.pointer = { x: px, y: py };
     const S = this.el.clientWidth;
-    const hitR = S * 0.115;
+    const hitR = S * (this.dragging ? 0.098 : 0.115);
     let best = -1, bestD = Infinity;
     for (let i = 0; i < this.centers.length; i++) {
       const dx = px - this.centers[i].x;
@@ -180,12 +242,25 @@ export class Wheel {
   onMove(e) {
     if (!this.dragging || !e.isPrimary) return;
     const i = this.hitTest(e);
+    const sat = this.hitSatellite(this.pointer.x, this.pointer.y);
+    if (sat) {
+      if (this.lastSat !== sat) { this.lastSat = sat; this.applyAccent(sat); }
+      this.drawRope();
+      return;
+    }
+    this.lastSat = null;
     if (i >= 0) {
       const sel = this.selected;
-      if (sel.length >= 2 && i === sel[sel.length - 2]) {
+      // Undo only on a deliberate return: the finger has to land near the
+      // middle of the previous tile, not merely clip it on the way past.
+      const S = this.el.clientWidth;
+      const backOK = i >= 0 &&
+        Math.hypot(this.pointer.x - this.centers[i].x, this.pointer.y - this.centers[i].y) < S * 0.07;
+      if (sel.length >= 2 && i === sel[sel.length - 2].i && backOK) {
         // moved back onto the previous letter → undo last selection
         const popped = sel.pop();
-        if (!sel.includes(popped)) this.buttons[popped].classList.remove('sel');
+        if (!sel.some(s => s.i === popped.i)) this.buttons[popped.i].classList.remove('sel');
+        this.showSatellites(sel[sel.length - 1]?.i ?? -1);
         this.onChange(this.word());
       } else if (this.canSelect(i)) {
         this.select(i);
@@ -212,19 +287,21 @@ export class Wheel {
 
   canSelect(i) {
     const it = this.items[i];
-    if (it.kind === 'mod') return this.selected[this.selected.length - 1] !== i;
-    return !this.selected.includes(i);
+    const last = this.selected[this.selected.length - 1];
+    if (it.kind === 'mod') return last?.i !== i;
+    return !this.selected.some(s => s.i === i);
   }
 
   select(i) {
-    this.selected.push(i);
+    this.selected.push({ i, accent: null });
     this.buttons[i].classList.add('sel');
     sndTick(this.selected.length - 1);
+    this.showSatellites(i);
     this.onChange(this.word());
   }
 
   drawRope() {
-    const pts = this.selected.map(i => this.centers[i]);
+    const pts = this.selected.map(s => this.centers[s.i]);
     if (this.dragging && this.pointer && pts.length) pts.push(this.pointer);
     this.svg.innerHTML = pts.length >= 2
       ? `<polyline points="${pts.map(p => `${p.x},${p.y}`).join(' ')}" />`
