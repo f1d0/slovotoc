@@ -685,7 +685,25 @@ body {
   text-align: center;
 }
 .rules-list b { display: block; font-size: 14.5px; margin-bottom: 2px; }
+/* emphasis inside a step must stay in the run of text, not start a new line */
+.rules-list b b, .rules-list span b { display: inline; font-size: inherit; margin: 0; }
 .rules-list span { display: block; font-size: 13px; opacity: 0.82; line-height: 1.42; }
+
+.sub-h {
+  text-align: left;
+  font-size: 15px;
+  margin: 18px 0 -4px;
+  opacity: 0.9;
+}
+.hint-note {
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: rgba(255, 201, 60, 0.16);
+  border: 1px solid rgba(255, 201, 60, 0.35);
+}
 
 .credits { text-align: left; margin: 12px 0 4px; }
 .credits li {

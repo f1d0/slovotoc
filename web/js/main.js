@@ -824,10 +824,12 @@ async function showLeaderboard() {
     <button class="big-btn" id="ov-switch">Vyměnit hráče</button>
     <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
     <button class="ghost-btn" id="ov-about">ℹ️ O hře a fotkách</button>
+    ${INSTALL_BTN()}
   `);
   $('#ov-switch').onclick = () => showPlayerPicker();
   $('#ov-close').onclick = hideOverlay;
   $('#ov-about').onclick = showAbout;
+  wireInstall(showLeaderboard);
   $('#ov-daily').onclick = () => {
     if (dailyDone()) { toast('Dnešní výzvu už máš hotovou 🎉 Vrať se zítra!'); return; }
     startDaily();
@@ -946,6 +948,88 @@ const RULES = [
   ['⚑', 'Nesedí ti slovo?', 'Tlačítkem vedle slova ho můžeš nahlásit — hra se díky tomu zlepšuje.'],
 ];
 
+// ---------- add to home screen ----------
+
+// iPadOS 13+ reports itself as a Mac, so touch points are what tell them apart.
+const IOS = /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+  (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+// Chrome and Firefox on iOS still put "Add to Home Screen" in the share sheet,
+// but the wording differs, so they get a nudge towards Safari.
+const IOS_OTHER = IOS && /CriOS|FxiOS|EdgiOS|OPiOS/.test(navigator.userAgent);
+
+const isInstalled = () =>
+  matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+// Desktop Firefox and Safari can neither prompt nor add to a home screen, so
+// offering it there would only puzzle the player.
+const canInstall = () => !isInstalled() && (IOS || !!window.__installPrompt || /Android/i.test(navigator.userAgent));
+
+const INSTALL_BTN = () =>
+  canInstall() ? '<button class="ghost-btn" id="ov-install">📲 Přidat na plochu</button>' : '';
+
+// Chrome can install in one tap; everything else has to be walked through the
+// browser's own menu, which is what showInstallHelp does.
+function wireInstall(back) {
+  const btn = $('#ov-install');
+  if (!btn) return;
+  btn.onclick = async () => {
+    const prompt = window.__installPrompt;
+    if (prompt) {
+      btn.disabled = true;
+      try {
+        prompt.prompt();
+        const { outcome } = await prompt.userChoice;
+        if (outcome === 'accepted') {
+          window.__installPrompt = null;
+          toast('Hotovo! Slovotoč najdeš na ploše 🎉', 3000);
+          btn.remove();
+          return;
+        }
+      } catch { /* prompt already used – fall through to the manual steps */ }
+      btn.disabled = false;
+    }
+    showInstallHelp(back);
+  };
+}
+
+const IOS_STEPS = [
+  ['⬆️', 'Klepni na <b>Sdílet</b>', 'Čtvereček se šipkou nahoru — dole uprostřed lišty (na iPadu vpravo nahoře).'],
+  ['➕', 'Vyber <b>Přidat na plochu</b>', 'V nabídce se posuň kousek dolů, položka je mezi ostatními akcemi.'],
+  ['✓', 'Potvrď <b>Přidat</b>', 'Vpravo nahoře. Ikona Slovotoče se objeví mezi ostatními aplikacemi.'],
+];
+
+const ANDROID_STEPS = [
+  ['⋮', 'Klepni na <b>tři tečky</b>', 'Vpravo nahoře v Chromu.'],
+  ['➕', 'Vyber <b>Přidat na plochu</b>', 'Někdy se to jmenuje <b>Nainstalovat aplikaci</b>.'],
+  ['✓', 'Potvrď <b>Instalovat</b>', 'Ikona Slovotoče se objeví na ploše telefonu.'],
+];
+
+const stepList = steps => `<ul class="rules-list">${steps.map(([icon, title, text]) =>
+  `<li><em>${icon}</em><div><b>${title}</b><span>${text}</span></div></li>`).join('')}</ul>`;
+
+function showInstallHelp(back) {
+  // Show the player's own platform first; the other one stays available
+  // because phones get handed around and links get forwarded.
+  const first = IOS
+    ? { h: '🍎 iPhone a iPad', steps: IOS_STEPS }
+    : { h: '🤖 Android', steps: ANDROID_STEPS };
+  const second = IOS
+    ? { h: '🤖 Android', steps: ANDROID_STEPS }
+    : { h: '🍎 iPhone a iPad', steps: IOS_STEPS };
+  showOverlay(`
+    <h2>📲 Přidat na plochu</h2>
+    <p class="tagline">Slovotoč se pak otevírá na celou obrazovku, bez adresního řádku,<br>
+      a hraje se i bez internetu. Žádné stahování z obchodu.</p>
+    ${IOS_OTHER ? '<p class="hint-note">Nejspolehlivěji to jde v <b>Safari</b> — otevři si v něm tenhle odkaz.</p>' : ''}
+    <h3 class="sub-h">${first.h}</h3>
+    ${stepList(first.steps)}
+    <h3 class="sub-h">${second.h}</h3>
+    ${stepList(second.steps)}
+    <button class="big-btn" id="ov-back">Rozumím</button>
+  `);
+  $('#ov-back').onclick = back;
+}
+
 function showRules(back) {
   showOverlay(`
     <h2>Jak se hraje</h2>
@@ -1023,9 +1107,11 @@ function showPlayerPicker(intro = false) {
       <button class="big-btn" id="np-go">Hrát</button>
     </div>
     <button class="ghost-btn" id="ov-rules">❓ Jak se hraje</button>
+    ${INSTALL_BTN()}
   `);
   fillRemotePlayers();
   $('#ov-rules').onclick = () => showRules(() => showPlayerPicker(intro));
+  wireInstall(() => showPlayerPicker(intro));
   for (const chip of els.overlayCard.querySelectorAll('.player-chip')) {
     chip.onclick = () => {
       const p = root.players[chip.dataset.name];

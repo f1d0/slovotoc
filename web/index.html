@@ -10,6 +10,12 @@
   <link rel="apple-touch-icon" href="assets/icon-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="css/style.css" />
+  <!-- Chrome fires this before the deferred module runs, so it is caught here
+       and handed to the game when the player asks to install. -->
+  <script>
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); window.__installPrompt = e; });
+    window.addEventListener('appinstalled', () => { window.__installPrompt = null; });
+  </script>
 </head>
 <body>
   <div id="app">
