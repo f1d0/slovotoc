@@ -28,7 +28,7 @@
   --bad: #ff7576;
   --ink: #2b3050;
   --cell: 44px;
-  --wheel-size: min(76vw, 330px, 40vh);
+  --wheel-size: min(72vw, 300px, 38vh);
   --tile: rgba(255, 255, 255, 0.14);
   --tile-border: rgba(255, 255, 255, 0.22);
 }
@@ -74,7 +74,11 @@ body {
 .bg {
   position: fixed;
   top: 0;
-  bottom: 0;
+  /* Overshoots the bottom on purpose: an installed iOS app reports a viewport
+     shorter than the glass, and anchoring to bottom:0 left a bare strip above
+     the home indicator. The layer is decorative, so spilling over costs
+     nothing. */
+  height: calc(100dvh + 160px);
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
@@ -318,9 +322,10 @@ body {
   align-items: flex-end;
   justify-content: center;
   gap: 10px;
-  /* On a phone with a home indicator its own inset is clearance enough, so the
-     controls sit lower there; older phones keep a hand-set margin. */
-  padding: 0 12px max(14px, env(safe-area-inset-bottom));
+  /* #app already pads by the safe-area inset, so adding the full inset again
+     here pushed the wheel a whole home indicator's height too high. Total
+     clearance below the wheel works out to max(inset + 6px, 14px). */
+  padding: 0 12px max(6px, calc(14px - env(safe-area-inset-bottom)));
 }
 .side-col {
   display: flex;
