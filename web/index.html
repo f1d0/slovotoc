@@ -26,14 +26,18 @@
   </script>
 </head>
 <body>
+  <!-- Decorative background layers. Deliberately a sibling of #app, not a
+       child: WebKit clips a position:fixed element to an ancestor that has
+       overflow:hidden, which is what kept the photo off the bottom of an
+       installed iOS app however tall it was made. -->
+  <div class="bg" aria-hidden="true">
+    <div id="bg-photo"></div>
+    <div class="bg-blob b1"></div>
+    <div class="bg-blob b2"></div>
+    <div class="bg-blob b3"></div>
+  </div>
+
   <div id="app">
-    <!-- decorative background layers -->
-    <div class="bg" aria-hidden="true">
-      <div id="bg-photo"></div>
-      <div class="bg-blob b1"></div>
-      <div class="bg-blob b2"></div>
-      <div class="bg-blob b3"></div>
-    </div>
 
     <header id="topbar">
       <div class="tb-left">

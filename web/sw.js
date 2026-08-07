@@ -1,6 +1,6 @@
 // Slovotoč service worker – cache-first for same-origin assets so the game
 // works offline after the first visit.
-const CACHE = 'slovotoc-v23';
+const CACHE = 'slovotoc-v24';
 const CORE = [
   './',
   './index.html',
@@ -37,7 +37,9 @@ self.addEventListener('activate', e => {
 // Code and level data go network-first so a player never sits on a stale
 // build (that is how a fixed word could still read as rejected); pictures,
 // fonts and icons stay cache-first because they rarely change and are big.
-const FRESH = /\.(html|js|json|webmanifest)$|\/$/;
+// CSS belongs here too: leaving it out meant a layout fix only reached players
+// one launch late, after the worker itself had rotated.
+const FRESH = /\.(html|js|css|json|webmanifest)$|\/$/;
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);

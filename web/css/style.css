@@ -44,6 +44,14 @@ html, body {
    must be the game's own dark, never the default white canvas. */
 html { background: var(--c1); }
 
+/* Installed, there is no collapsing browser toolbar to account for, and iOS
+   hands an installed app a dvh a little short of the glass – so the large
+   viewport unit is the one that actually fills the screen here. In a browser
+   tab dvh stays right, because there the toolbar really does come and go. */
+@media (display-mode: standalone) {
+  html, body, #app { height: 100vh; }
+}
+
 body {
   font-family: 'Nunito', 'Segoe UI', system-ui, sans-serif;
   background: linear-gradient(165deg, var(--c1) 0%, var(--c2) 100%);
@@ -68,17 +76,14 @@ body {
 }
 
 /* ---------- decorative background ---------- */
-/* Pinned to the viewport rather than to #app, so the photo covers the notch
-   and the home-indicator strip whatever height #app works out to. Width still
-   tracks the app column, so the desktop layout is unchanged. */
+/* Pinned to the viewport, and a sibling of #app so nothing clips it. Overshoots
+   the bottom edge because iOS can hand an installed app a viewport a little
+   shorter than the glass; the layer is decorative, so spilling over is free.
+   Width still tracks the app column, leaving the desktop layout alone. */
 .bg {
   position: fixed;
   top: 0;
-  /* Overshoots the bottom on purpose: an installed iOS app reports a viewport
-     shorter than the glass, and anchoring to bottom:0 left a bare strip above
-     the home indicator. The layer is decorative, so spilling over costs
-     nothing. */
-  height: calc(100dvh + 160px);
+  bottom: -60px;
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
