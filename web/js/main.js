@@ -274,7 +274,7 @@ function loadLevel(restore = false, opts = {}) {
   persist();
 }
 
-function wordFound(word) {
+function wordFound(word, extra = []) {
   found.add(word);
   player.sawTip = true;
   els.tip.classList.add('hidden');
@@ -286,6 +286,22 @@ function wordFound(word) {
     onDone: () => {
       (grid.wordCells.get(word) || []).forEach(k => grid.reveal(k));
       sndReveal();
+      // words that share the same bare spelling are all credited at once
+      for (const w of extra) {
+        if (grid.wordCells.has(w)) {
+          found.add(w);
+          (grid.wordCells.get(w) || []).forEach(k => grid.reveal(k));
+          grid.pulseWord(w);
+        } else if (!foundBonus.has(w)) {
+          foundBonus.add(w);
+          player.bonusTotal += 1;
+          els.bonusCount.textContent = foundBonus.size;
+          els.jar.classList.remove('wiggle');
+          void els.jar.offsetWidth;
+          els.jar.classList.add('wiggle');
+        }
+      }
+      if (extra.length) sndBonus();
       for (const w of grid.completedWords(found)) { found.add(w); grid.pulseWord(w); }
       updateWordsLeft();
       persist();
@@ -388,23 +404,36 @@ function submitWord(raw) {
     offerReport();
     return;
   }
-  // A crossword answer always wins over a bonus word that happens to share
-  // the same bare spelling — otherwise typing ZELENA banks a bonus instead
-  // of filling ZELENÁ into the grid.
-  const gridUnfound = cands.filter(w => grid.wordCells.has(w) && !found.has(w));
-  if (gridUnfound.length === 1) return acceptWord(gridUnfound[0]);
-  if (gridUnfound.length > 1) return chooseWord(gridUnfound, word);
-
-  if (cands.includes(word)) return acceptWord(word);
-
-  const unseen = cands.filter(w => !found.has(w) && !foundBonus.has(w));
-  const pool = unseen.length ? unseen : cands;
-  if (pool.length === 1) {
-    showPill(pool[0]);
-    if (pool[0] !== word) toast(`✍️ ${UC(word)} → ${UC(pool[0])}`, 1600);
-    return acceptWord(pool[0]);
+  // One bare spelling can fit several real words (MŮŽE / MUŽE). Asking which
+  // one was meant just costs a tap — every match is credited instead, and a
+  // crossword answer leads so the grid fills rather than the bonus jar.
+  const fresh = cands.filter(w => !found.has(w) && !foundBonus.has(w));
+  if (!fresh.length) {
+    lastWordAccepted = true;
+    sndDupe();
+    pillResult('dupe', 350);
+    const already = cands.find(w => found.has(w));
+    if (already) grid.pulseWord(already);
+    offerReport();
+    return;
   }
-  chooseWord(pool, word);
+
+  const inGrid = fresh.filter(w => grid.wordCells.has(w));
+  const lead = inGrid[0] ?? fresh[0];
+  const extra = fresh.filter(w => w !== lead);
+
+  showPill(lead);
+  lastWord = lead;
+  lastWordAccepted = true;
+  if (extra.length) {
+    toast(`✨ ${[lead, ...extra].map(w => UC(w)).join(' + ')} — ${fresh.length} slova naráz!`, 2400);
+  } else if (lead !== word) {
+    toast(`✍️ ${UC(word)} → ${UC(lead)}`, 1600);
+  }
+
+  if (grid.wordCells.has(lead)) wordFound(lead, extra);
+  else { bonusFound(lead); for (const w of extra) if (!foundBonus.has(w)) { foundBonus.add(w); player.bonusTotal += 1; } els.bonusCount.textContent = foundBonus.size; }
+  offerReport();
 }
 
 // ---------- word reporting ----------
