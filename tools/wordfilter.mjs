@@ -40,6 +40,11 @@ const EXPLICIT_WORDS = new Set([
   'vole', 'krypl', 'magor', 'magoři', 'magora', 'magorům',
   'sperma', 'spermat', 'spermatu', 'spermie', 'spermií',
   'bordelu', 'štětko',
+  // Neither of these can be a stem: "prc" would swallow prcek/prcka and
+  // "svin" would swallow svinout/svinovat, all perfectly innocent.
+  'prcat', 'prcá', 'prcal', 'prcala', 'prcali', 'prcám', 'prcáš', 'prcání',
+  'zaprcat', 'vyprcat', 'naprcat',
+  'svině', 'svine', 'svini', 'sviní', 'svinětem', 'svinstvo', 'svinstva',
 ]);
 
 // Innocent words/stems that would otherwise be caught above.

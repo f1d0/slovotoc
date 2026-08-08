@@ -1,6 +1,6 @@
 // Slovotoč service worker – cache-first for same-origin assets so the game
 // works offline after the first visit.
-const CACHE = 'slovotoc-v24';
+const CACHE = 'slovotoc-v25';
 const CORE = [
   './',
   './index.html',
@@ -41,20 +41,36 @@ self.addEventListener('activate', e => {
 // one launch late, after the worker itself had rotated.
 const FRESH = /\.(html|js|css|json|webmanifest)$|\/$/;
 
+// A dead network fails fast, but a barely-alive one can hang for a minute.
+// Waiting past this we serve the cached copy instead of a blank screen; the
+// request itself still runs on, so the cache is refreshed for next time.
+const NET_TIMEOUT_MS = 4000;
+
+async function fresh(request) {
+  const cached = caches.match(request);
+  const network = fetch(request).then(res => {
+    if (res && res.ok) caches.open(CACHE).then(c => c.put(request, res.clone()));
+    return res;
+  });
+  const slow = new Promise(res => setTimeout(() => res(null), NET_TIMEOUT_MS));
+
+  try {
+    const won = await Promise.race([network, slow]);
+    if (won && won.ok) return won;
+    return (await cached) || (await network);
+  } catch {
+    const hit = await cached;
+    if (hit) return hit;
+    throw new Error('offline and nothing cached');
+  }
+}
+
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin || e.request.method !== 'GET') return;
 
   if (FRESH.test(url.pathname)) {
-    e.respondWith(
-      fetch(e.request)
-        .then(res => {
-          const copy = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, copy));
-          return res;
-        })
-        .catch(() => caches.match(e.request))
-    );
+    e.respondWith(fresh(e.request));
     return;
   }
 

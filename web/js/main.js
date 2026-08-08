@@ -81,6 +81,7 @@ let found = new Set();      // found target words
 let foundBonus = new Set(); // found bonus words (this level)
 let hinted = new Set();     // hint-revealed cell keys
 let busy = false;           // block input during transitions
+let completing = false;     // a level is being finished – must happen once
 let hammerArmed = false;
 let toastTimer = null;
 let curPack = null;         // pack the current level belongs to
@@ -172,8 +173,20 @@ function persist() {
   saveRoot(root);
 }
 
+// Rows on the shared board are written by other people, so an avatar is
+// untrusted text. It is clamped to a couple of characters on the way in and
+// escaped on the way out – neither step alone is enough.
+function cleanAvatar(a) {
+  if (typeof a !== 'string') return undefined;
+  const chars = [...a.trim()];
+  return chars.length && chars.length <= 3 ? chars.join('') : undefined;
+}
+function safeAvatar(a) {
+  return esc(cleanAvatar(a) ?? '🙂');
+}
+
 function esc(s) {
-  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 // ---------- word pill ----------
@@ -200,6 +213,7 @@ function flyLetters(word, targets, { gold = false, onDone } = {}) {
   const spans = [...els.pill.children];
   const cellPx = parseFloat(getComputedStyle(els.grid).getPropertyValue('--cell')) || 44;
   const finished = [];
+  const flying = [];
   [...word].forEach((ch, i) => {
     const src = (spans[i] || els.pill).getBoundingClientRect();
     const dst = targets[i];
@@ -218,9 +232,21 @@ function flyLetters(word, targets, { gold = false, onDone } = {}) {
       { transform: 'translate(0,0) scale(1)', opacity: 1 },
       { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, opacity: gold ? 0.4 : 1 },
     ], { duration: 380, delay: i * 45, easing: 'cubic-bezier(0.5, 0, 0.4, 1)', fill: 'forwards' });
+    flying.push(f);
     finished.push(new Promise(res => { anim.onfinish = () => { f.remove(); res(); }; }));
   });
-  Promise.all(finished).then(() => onDone && onDone());
+  // Switching apps mid-word pauses these animations, and a paused one may
+  // never report finishing. Since the board is locked until it does, the game
+  // must not depend on that: after a beat, finish the move regardless.
+  let settled = false;
+  const done = () => {
+    if (settled) return;
+    settled = true;
+    for (const f of flying) f.remove();
+    if (onDone) onDone();
+  };
+  Promise.all(finished).then(done);
+  setTimeout(done, 380 + word.length * 45 + 900);
 }
 
 // ---------- level lifecycle ----------
@@ -245,6 +271,7 @@ function loadLevel(restore = false, opts = {}) {
   foundBonus = new Set();
   hinted = new Set();
   busy = false;
+  completing = false;
   hammerArmed = false;
   els.hammer.classList.remove('armed');
 
@@ -281,9 +308,15 @@ function wordFound(word, extra = []) {
   sndWord();
   pillResult('ok', 120);
   const targets = (grid.wordCells.get(word) || []).map(k => grid.cellRect(k));
+  // Hints stay locked until the letters land. Revealing a cell mid-flight
+  // could finish the level twice over: once from the hint, once from the
+  // animation landing on an already-finished board.
+  busy = true;
   wheel.setEnabled(false);
+  const forLevel = level;
   flyLetters(word, targets, {
     onDone: () => {
+      if (level !== forLevel) return; // the level changed under the animation
       (grid.wordCells.get(word) || []).forEach(k => grid.reveal(k));
       sndReveal();
       // words that share the same bare spelling are all credited at once
@@ -292,45 +325,56 @@ function wordFound(word, extra = []) {
           found.add(w);
           (grid.wordCells.get(w) || []).forEach(k => grid.reveal(k));
           grid.pulseWord(w);
-        } else if (!foundBonus.has(w)) {
-          foundBonus.add(w);
-          player.bonusTotal += 1;
-          els.bonusCount.textContent = foundBonus.size;
-          els.jar.classList.remove('wiggle');
-          void els.jar.offsetWidth;
-          els.jar.classList.add('wiggle');
+        } else if (creditBonus(w)) {
+          wiggleJar();
         }
       }
       if (extra.length) sndBonus();
       for (const w of grid.completedWords(found)) { found.add(w); grid.pulseWord(w); }
       updateWordsLeft();
       persist();
+      busy = false;
       if (grid.allRevealed()) return levelComplete();
       wheel.setEnabled(true);
     },
   });
 }
 
-function bonusFound(word) {
+function wiggleJar() {
+  els.jar.classList.remove('wiggle');
+  void els.jar.offsetWidth;
+  els.jar.classList.add('wiggle');
+}
+
+// Counts a bonus word once and pays the milestone the moment it is crossed.
+// Doing this at the point of credit rather than after the animation means a
+// word credited alongside another one cannot skip the payout.
+function creditBonus(word) {
+  if (foundBonus.has(word)) return false;
   foundBonus.add(word);
   player.bonusTotal += 1;
+  els.bonusCount.textContent = foundBonus.size;
+  if (player.bonusTotal % BONUS_MILESTONE === 0) {
+    setCoins(player.coins + BONUS_MILESTONE_COINS, true);
+    toast(`⭐ +${BONUS_MILESTONE_COINS} mincí za ${player.bonusTotal} bonusových slov!`);
+  }
+  return true;
+}
+
+function bonusFound(word) {
+  creditBonus(word);
   sndBonus();
   pillResult('bonus', 150);
   const jarRect = els.jar.getBoundingClientRect();
+  const forLevel = level;
   flyLetters(word, [...word].map(() => jarRect), {
     gold: true,
     onDone: () => {
-      els.bonusCount.textContent = foundBonus.size;
-      els.jar.classList.remove('wiggle');
-      void els.jar.offsetWidth;
-      els.jar.classList.add('wiggle');
+      if (level !== forLevel) return;
+      wiggleJar();
       // Without this the only feedback is a small icon in the corner, and a
       // run of valid-but-not-in-grid words looks like the game ignoring you.
       toast(`⭐ ${UC(word)} — bonusové slovo, v křížovce není`, 2000);
-      if (player.bonusTotal % BONUS_MILESTONE === 0) {
-        setCoins(player.coins + BONUS_MILESTONE_COINS, true);
-        toast(`⭐ +${BONUS_MILESTONE_COINS} mincí za ${player.bonusTotal} bonusových slov!`);
-      }
       persist();
       syncScore();
     },
@@ -340,50 +384,6 @@ function bonusFound(word) {
 function candidatesFor(word) {
   const f = fold(word);
   return [...level.words.map(p => p.w), ...level.bonus].filter(w => fold(w) === f);
-}
-
-function acceptWord(word) {
-  lastWord = word;
-  lastWordAccepted = true;
-  if (grid.wordCells.has(word)) {
-    if (found.has(word)) {
-      sndDupe();
-      pillResult('dupe', 350);
-      grid.pulseWord(word);
-    } else {
-      wordFound(word);
-    }
-  } else if (foundBonus.has(word)) {
-    sndDupe();
-    pillResult('dupe', 350);
-    els.jar.classList.remove('wiggle');
-    void els.jar.offsetWidth;
-    els.jar.classList.add('wiggle');
-  } else {
-    bonusFound(word);
-  }
-  offerReport();
-}
-
-function chooseWord(options, typed) {
-  busy = true;
-  wheel.setEnabled(false);
-  showOverlay(`
-    <h2>Které slovo myslíš?</h2>
-    <p>Bez háčků a čárek sedí <b>${esc(UC(typed))}</b> na víc slov.</p>
-    <div class="choice-list">
-      ${options.map(w => `<button class="big-btn choice" data-w="${esc(w)}">${esc(UC(w))}</button>`).join('')}
-    </div>
-    <button class="ghost-btn" id="ch-cancel">Zpět</button>`);
-  const close = () => {
-    hideOverlay();
-    busy = false;
-    wheel.setEnabled(true);
-  };
-  for (const b of els.overlayCard.querySelectorAll('.choice')) {
-    b.onclick = () => { close(); showPill(b.dataset.w); acceptWord(b.dataset.w); };
-  }
-  $('#ch-cancel').onclick = close;
 }
 
 function submitWord(raw) {
@@ -431,8 +431,12 @@ function submitWord(raw) {
     toast(`✍️ ${UC(word)} → ${UC(lead)}`, 1600);
   }
 
-  if (grid.wordCells.has(lead)) wordFound(lead, extra);
-  else { bonusFound(lead); for (const w of extra) if (!foundBonus.has(w)) { foundBonus.add(w); player.bonusTotal += 1; } els.bonusCount.textContent = foundBonus.size; }
+  if (grid.wordCells.has(lead)) {
+    wordFound(lead, extra);
+  } else {
+    bonusFound(lead);
+    for (const w of extra) creditBonus(w);
+  }
   offerReport();
 }
 
@@ -644,7 +648,39 @@ function totalStars(p) {
   return Object.values(p.stars ?? {}).reduce((a, b) => a + b, 0);
 }
 
+// The end screen is also what a finished player sees on every later visit, so
+// it must be reachable without replaying – and paying for – the last level.
+function showAllDone() {
+  busy = true;
+  completing = true;
+  wheel.setEnabled(false);
+  showOverlay(`
+    <h1>🏆 Fantastické!</h1>
+    <p>${esc(player.name)}, dokončil jsi všech ${LEVELS.length} úrovní Slovotoče!</p>
+    <div class="reward">${coinSvg()} ${player.coins}</div>
+    <p>Celkem bonusových slov: <b>${player.bonusTotal}</b></p>
+    <button class="big-btn" id="ov-board">🏆 Žebříček</button>
+    <button class="ghost-btn" id="ov-restart">Hrát znovu od začátku</button>
+  `);
+  $('#ov-board').onclick = showLeaderboard;
+  $('#ov-restart').onclick = () => {
+    const fresh = newPlayer(player.name, player.avatar);
+    fresh.best = bestOf(player);
+    fresh.bonusTotal = player.bonusTotal;
+    fresh.stars = player.stars ?? {};
+    fresh.daily = player.daily ?? null;
+    fresh.coins = player.coins;
+    root.players[player.name] = fresh;
+    player = fresh;
+    saveRoot(root);
+    hideOverlay();
+    loadLevel();
+  };
+}
+
 function levelComplete() {
+  if (completing) return; // a hint and the last word can both land on a full grid
+  completing = true;
   busy = true;
   wheel.setEnabled(false);
   if (dailyMode) return setTimeout(() => { sndFanfare(); confettiBurst(els.confetti); finishDaily(); }, 700);
@@ -674,25 +710,7 @@ function levelComplete() {
     if (lastLevel) {
       player.levelIndex = LEVELS.length; // marks everything done
       saveRoot(root);
-      showOverlay(`
-        <h1>🏆 Fantastické!</h1>
-        <p>${esc(player.name)}, dokončil jsi všech ${LEVELS.length} úrovní Slovotoče!</p>
-        <div class="reward">${coinSvg()} ${player.coins}</div>
-        <p>Celkem bonusových slov: <b>${player.bonusTotal}</b></p>
-        <button class="big-btn" id="ov-board">🏆 Žebříček</button>
-        <button class="ghost-btn" id="ov-restart">Hrát znovu od začátku</button>
-      `);
-      $('#ov-board').onclick = showLeaderboard;
-      $('#ov-restart').onclick = () => {
-        const fresh = newPlayer(player.name, player.avatar);
-        fresh.best = bestOf(player);
-        fresh.bonusTotal = player.bonusTotal;
-        root.players[player.name] = fresh;
-        player = fresh;
-        saveRoot(root);
-        hideOverlay();
-        loadLevel();
-      };
+      showAllDone();
       return;
     }
 
@@ -802,7 +820,7 @@ function renderBoard(rows, note) {
       ${sorted.map((r, i) => `
         <div class="board-row ${r.device_id === root.deviceId && r.name === player?.name ? 'me' : ''}">
           <i>${medals[i] ?? i + 1 + '.'}</i>
-          <b>${r.avatar ?? ''} ${esc(r.name)}</b>
+          <b>${safeAvatar(r.avatar)} ${esc(r.name)}</b>
           <span>${r.levels}</span><span>${r.stars ?? 0}</span><span>${r.bonus}</span><span>${r.streak ?? 0}</span>
         </div>`).join('')}
     </div>
@@ -909,9 +927,14 @@ function startAs(name, { recover = true } = {}) {
   hideOverlay();
   syncScore();
   if (player.levelIndex >= LEVELS.length) {
+    // Everything is done. Show the last board behind the end screen rather
+    // than replaying the final level, which used to hand out its reward again
+    // on every single visit.
     player.levelIndex = LEVELS.length - 1;
     loadLevel();
-    levelComplete();
+    for (const k of grid.unrevealedKeys()) grid.reveal(k, { silent: true });
+    player.levelIndex = LEVELS.length;
+    showAllDone();
   } else {
     loadLevel(true);
   }
@@ -1045,7 +1068,7 @@ function showRules(back) {
 // Copies a player's progress from the shared board onto this device, so the
 // same person can carry on from a different phone or browser.
 function adoptPlayer(row) {
-  const p = newPlayer(row.name, row.avatar || undefined);
+  const p = newPlayer(row.name, cleanAvatar(row.avatar));
   p.levelIndex = Math.min(row.levels ?? 0, LEVELS.length - 1);
   p.best = row.levels ?? 0;
   p.coins = row.coins ?? p.coins;
@@ -1070,7 +1093,7 @@ async function fillRemotePlayers() {
       <p class="picker-sub">Hraješ už na jiném telefonu? Vyber se a pokračuj:</p>
       <div class="player-list">
         ${others.map(r => `<button class="player-chip remote" data-name="${esc(r.name)}">
-            <em>${r.avatar ?? '🙂'}</em><b>${esc(r.name)}</b><span>úroveň ${(r.levels ?? 0) + 1}</span>
+            <em>${safeAvatar(r.avatar)}</em><b>${esc(r.name)}</b><span>úroveň ${(r.levels ?? 0) + 1}</span>
           </button>`).join('')}
       </div>`;
     for (const chip of box.querySelectorAll('.player-chip')) {
@@ -1097,7 +1120,7 @@ function showPlayerPicker(intro = false) {
       ${names.map(n => {
         const p = root.players[n];
         return `<button class="player-chip" data-name="${esc(n)}">
-          <em>${p.avatar}</em><b>${esc(n)}</b><span>úroveň ${Math.min(p.levelIndex + 1, LEVELS.length)}</span>
+          <em>${safeAvatar(p.avatar)}</em><b>${esc(n)}</b><span>úroveň ${Math.min(p.levelIndex + 1, LEVELS.length)}</span>
         </button>`;
       }).join('')}
     </div>` : `<p>${intro ? 'Zadej jméno a pojď hrát — žádná registrace, žádné reklamy.' : 'Zadej své jméno a pojď hrát!'}</p>`}
@@ -1180,10 +1203,28 @@ els.sound.addEventListener('click', () => {
 
 window.addEventListener('resize', () => grid && grid.fit(els.board));
 
+// Without the levels there is no game, and failing silently left the player
+// looking at an empty screen with nothing to do about it.
+function showLoadError(err) {
+  els.overlayCard.innerHTML = `
+    <h2>😕 Hru se nepodařilo načíst</h2>
+    <p>Nepovedlo se stáhnout slova a úrovně. Nejspíš to je slabým
+       připojením — zkus to prosím znovu.</p>
+    <button class="big-btn" id="ov-retry">Zkusit znovu</button>
+    <p style="font-size:12px;opacity:0.6">${esc(String(err && err.message || err))}</p>`;
+  els.overlay.classList.remove('hidden');
+  els.overlay.style.pointerEvents = 'auto';
+  $('#ov-retry').onclick = () => location.reload();
+}
+
 async function boot() {
-  const res = await fetch('data/levels.json');
+  // A stalled request is worse than a failed one – it never resolves and the
+  // player waits forever. Give up and say so instead.
+  const res = await fetch('data/levels.json', { signal: AbortSignal.timeout?.(15000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   DATA = await res.json();
   LEVELS = DATA.packs.flatMap(p => p.levels);
+  if (!LEVELS.length) throw new Error('prázdná data');
 
   setSoundEnabled(root.sound);
   els.sound.querySelector('.ic-sound-on').style.display = root.sound ? '' : 'none';
@@ -1204,6 +1245,7 @@ async function boot() {
       players: Object.keys(root.players),
     }),
     level: () => level,
+    busy: () => busy,
   };
 }
 
@@ -1211,4 +1253,4 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
   addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
 
-boot();
+boot().catch(showLoadError);
