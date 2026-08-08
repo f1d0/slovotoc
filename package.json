@@ -1,0 +1,22 @@
+{
+  "name": "slovotoc",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Czech word-search crossword game — a static PWA with an offline level generator",
+  "homepage": "https://slovotoc.cz",
+  "license": "MIT",
+  "scripts": {
+    "test": "node tests/data.mjs && node tests/edge.mjs",
+    "test:data": "node tests/data.mjs",
+    "test:edge": "node tests/edge.mjs",
+    "levels": "node tools/generate-levels.mjs",
+    "backgrounds": "node tools/fetch-backgrounds.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.49.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

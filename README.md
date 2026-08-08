@@ -1,95 +1,159 @@
 # Slovotoč 🟡
 
-Česká slovní hra ve stylu *Words of Wonders*: spojuj písmena tahem prstu,
-hledej slova a vyplň křížovku. 160 úrovní v 16 balíčcích, bonusová slova,
-mince a nápovědy. Bez reklam, bez účtů, bez sledování — prostě pošli
-kamarádům odkaz a hrajte.
+**A Czech word game: swipe letters on a wheel to spell words and fill a
+crossword.** No ads, no accounts, no tracking. 240 levels across 24 packs
+named after real Czech places, a shared leaderboard, a daily challenge, and
+full offline play once loaded.
 
-**▶ Hrát:** https://f1d0.github.io/wowczechversion/
+### ▶ [slovotoc.cz](https://slovotoc.cz)
 
-- Funguje na mobilu i na počítači (tah prstem / tažení myší).
-- Průběh hry se ukládá v prohlížeči (localStorage).
-- Na jednom zařízení může hrát víc lidí — každý pod svým jménem.
-- **Společný žebříček** všech hráčů napříč zařízeními (🏆 nahoře).
-- Nesprávné slovo lze nahlásit tlačítkem ⚑ (založí GitHub issue).
-- Po prvním načtení funguje i offline (PWA — lze přidat na plochu);
-  žebříček se v offline režimu přepne na hráče z tohoto zařízení.
+> 🇨🇿 *Česká slovní hra — spojuj písmena tahem prstu, hledej slova a vyplň
+> křížovku. Hraj na [slovotoc.cz](https://slovotoc.cz), nic se nestahuje
+> a nikde se neregistruješ.*
 
-## Jak hra funguje
+The whole game is a static site: plain ES modules and CSS, no framework, no
+build step, ~120 kB gzipped including the entire dictionary. `web/` is
+deployed verbatim.
 
-- Ve spodním kruhu **spoj písmena tahem** a vytvoř slovo.
-- Slovo z křížovky se doplní do mřížky; platné české slovo, které v křížovce
-  není, se počítá jako **bonusové slovo** (⭐) — každých 10 přinese mince.
-- **💡 (25 mincí)** odkryje náhodné písmeno, **🔨 (60 mincí)** odkryje
-  políčko, které si vybereš. Mince dostáváš za dokončené úrovně.
+---
 
-## Fotky míst
+## The mechanic that makes it not a clone
 
-Každý balíček má na pozadí jemnou (rozostřenou a ztlumenou) fotku daného
-místa. Fotky stahuje `tools/fetch-backgrounds.mjs` z **Wikimedia Commons**
-a bere jen volně licencované snímky (CC0 / CC BY / CC BY-SA / public
-domain). Autor a licence každé fotky jsou uvedeny v `web/data/photo-credits.json`
-a přímo ve hře v sekci **ℹ️ O hře a fotkách**.
+The genre is well trodden — *Wordscapes*, *Words of Wonders* and a dozen
+others. Czech is what makes it interesting, because Czech has diacritics and
+a wheel with 8 tiles cannot carry `e ě é` as separate letters without
+becoming unplayable.
 
-```bash
-node tools/fetch-backgrounds.mjs   # doplní web/assets/bg/*.jpg + kredity
+**The wheel holds bare letters, and the game writes the accents for you.**
+Swipe `KRIDLO` and it fills in `KŘÍDLO`. Words are matched on their
+de-accented form, which roughly doubles the usable vocabulary from the same
+eight tiles.
+
+When one bare spelling fits several real words — `sit` → `síť` *and* `sít`,
+`rad` → `řád` *and* `rád` — the game credits **all** of them at once rather
+than asking which you meant. 38 levels contain such a pair on purpose.
+
+## Playing
+
+- Drag across the letters in the bottom wheel; release to submit.
+- A word in the crossword flies into the grid. A valid Czech word that
+  *isn't* in the crossword counts as a **bonus word** (⭐) — every 10 pay out
+  coins.
+- **💡 25 coins** reveals a random letter, **🔨 60 coins** a square you pick.
+- **Stars:** finishing earns 1, finishing without hints 2, and adding three
+  bonus words 3.
+- **Daily challenge:** one puzzle a day, the same for everyone, no server
+  involved — the date seeds the level index.
+- Progress lives in `localStorage`; several people can share one device, each
+  under their own name.
+
+## How it fits together
+
+```
+web/                     the game — deployed as-is, no build
+  index.html
+  js/main.js             game flow, levels, overlays, scoring
+  js/wheel.js            pointer-driven letter wheel + rope
+  js/grid.js             crossword rendering and reveals
+  js/state.js            localStorage, multiple players
+  js/leaderboard.js      Supabase REST client (fails soft when offline)
+  sw.js                  service worker: network-first code, cache-first art
+  data/levels.json       240 pre-generated levels
+tools/                   offline generation (Node, run by hand)
+  wordfilter.mjs         kid-safe filter + Czech letter rules
+  extract-wikt-lemmas.mjs  dictionary headwords from Wiktionary
+  generate-levels.mjs    picks words, builds crosswords, writes levels.json
+  layout.mjs             the crossword layout algorithm
+  fetch-backgrounds.mjs  Wikimedia Commons photos + credits
+tests/                   see below
 ```
 
-Hra je nekomerční projekt pro kamarády; fotky jsou použity v souladu se
-svými licencemi včetně uvedení autorů.
+**Levels are generated offline, never in the browser.** Choosing words and
+laying out a crossword is a search problem; doing it at runtime would be both
+slow and non-deterministic. `levels.json` is the frozen result.
 
-## Žebříček (Supabase)
+**Crossword answers are dictionary headwords only** — nouns in the nominative,
+verbs in the infinitive — taken from Wiktionary. Inflected fragments like
+*kol* or *jsme* never appear as answers. Bonus words are deliberately far more
+permissive, so ordinary Czech is accepted even when it is not a headword.
 
-Skóre se ukládá do tabulky `leaderboard` v Supabase (free tier).
-`web/js/leaderboard.js` obsahuje URL projektu a veřejný **anon** klíč —
-ten je určen k publikování v klientském kódu, přístup hlídají RLS politiky
-v databázi (čtení a zápis skóre ano, mazání ne).
-
-Skóre = nejvyšší dosažená úroveň (`best`), takže restart hry o pozici
-v žebříčku nepřipraví. Zápis probíhá po dokončení úrovně a při odchodu
-ze stránky; když je hráč offline, žebříček zobrazí jen hráče z tohoto
-zařízení a skóre se dosynchronizuje později.
-
-Založení tabulky (SQL editor v Supabase) je popsáno v `docs/leaderboard.sql`.
-
-## Struktura repozitáře
-
-- `web/` — celá hra, čistý HTML/CSS/JS bez build kroku; nasazuje se na
-  GitHub Pages akcí v `.github/workflows/deploy.yml`.
-- `web/data/levels.json` — předgenerované úrovně (písmena, rozložení
-  křížovky, bonusová slova).
-- `tools/` — offline generátor úrovní (Node 18+):
-  - `wordfilter.mjs` — filtr slovníku (znaky, délka, dětem přátelský obsah),
-  - `extract-wikt-lemmas.mjs` — extrakce slovníkových hesel z Wikislovníku,
-  - `generate-levels.mjs` — výběr slov + skládání křížovek.
-
-Slova v křížovce jsou výhradně **slovníková hesla** (podstatná jména
-v 1. pádě, slovesa v infinitivu…) z anglického Wikislovníku pro češtinu;
-tvary jako „kol" nebo „jsme" se v mřížce nikdy neobjeví. Bonusová slova
-jsou benevolentnější a přijímají i vyskloňované tvary.
-
-### Přegenerování úrovní
+## Running it locally
 
 ```bash
-# zdrojová data (viz Poděkování níže):
+npm install          # playwright-core, for the tests only
+npm test             # data integrity + browser edge cases
+
+# the game itself needs no build:
+cd web && python3 -m http.server 8000
+```
+
+The service worker only registers over HTTPS, so plain `http://localhost`
+gives you the game without offline caching — which is usually what you want
+while developing.
+
+## Tests
+
+```bash
+npm run test:data    # structural checks on levels.json, no browser
+npm run test:edge    # eight ways to break the game, in a real browser
+```
+
+`tests/data.mjs` checks every level: words buildable from the wheel, letters
+agreeing where words cross, nothing outside the grid, no two words running
+along the same line, a connected crossword, and every word passing the
+kid-safe filter.
+
+`tests/edge.mjs` is the interesting one. Each case reproduces a bug that was
+actually in this game:
+
+| Case | The bug it guards |
+|---|---|
+| hint during the winning animation | finished the level twice — double reward, campaign jumped two levels |
+| reopening a finished game | replayed the last level's payout on every visit |
+| hostile leaderboard avatar | remote text went into the DOM unescaped and ran script |
+| level data fails to load | blank screen, no message, no way forward |
+| leaving the daily mid-animation | letters landing on the level that replaced it |
+| `localStorage` blocked | private browsing threw on write |
+| blank player name | started a game as nobody |
+| the same word submitted twice | counted twice |
+
+If you regenerate levels, run `npm run test:data` before shipping.
+
+## Regenerating the levels
+
+The source dictionaries are large and not vendored here:
+
+```bash
 git clone --depth 1 https://github.com/filip-opalka/czech-wordlist /workspace/czech-wordlist
 git clone --depth 1 --filter=blob:none --sparse https://github.com/hermitdave/FrequencyWords /workspace/freqwords
 (cd /workspace/freqwords && git sparse-checkout set content/2018/cs)
 curl -L -o /workspace/cs_CZ.dic https://raw.githubusercontent.com/LibreOffice/dictionaries/master/cs_CZ/cs_CZ.dic
 curl -L -o /workspace/kaikki-cs.jsonl https://kaikki.org/dictionary/Czech/kaikki.org-dictionary-Czech.jsonl
 
-node tools/extract-wikt-lemmas.mjs   # slovníková hesla → /workspace/wikt-cs-lemmas.txt
-node tools/generate-levels.mjs       # zapíše web/data/levels.json + QA výpis
+node tools/extract-wikt-lemmas.mjs   # → /workspace/wikt-cs-lemmas.txt
+npm run levels                        # → web/data/levels.json
+npm test
 ```
 
-## Poděkování / licence dat
+`tools/purge-words.mjs` is the surgical alternative: when the kid-safe filter
+gains a rule, it strips the newly-banned words and relays *only* the affected
+levels, leaving everyone's saved progress in the other levels intact.
 
-- Slovníková hesla: [Wikislovník (en.wiktionary, čeština)](https://en.wiktionary.org)
-  přes extrakci [kaikki.org](https://kaikki.org/dictionary/Czech/) (CC BY-SA / GFDL).
-- Český slovník tvarů: [filip-opalka/czech-wordlist](https://github.com/filip-opalka/czech-wordlist)
-  (odvozeno z hunspell `cs_CZ`, GPL) a [LibreOffice dictionaries](https://github.com/LibreOffice/dictionaries) (GPL).
-- Frekvenční seznam: [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords)
-  (z korpusu OpenSubtitles, CC-BY-SA 4.0).
-- Písmo: [Nunito](https://fonts.google.com/specimen/Nunito) (SIL Open Font License).
-- Inspirováno hrou *Words of Wonders* (Fugo Games). Tento projekt je
-  nekomerční fanouškovská hra a není s Fugo Games nijak spojen.
+## Leaderboard
+
+Scores go to a `leaderboard` table in Supabase (free tier). Identity is just
+the player's name — deliberately, so a seven-year-old can join without an
+email address. Score is the highest level ever reached, so starting over
+doesn't cost you your place. Every call has a timeout and falls back to local
+data, so the game stays playable when Supabase is asleep or unreachable.
+
+Table setup: [`docs/leaderboard.sql`](docs/leaderboard.sql).
+
+## Licences
+
+Code is MIT. The level data is CC BY-SA (it derives from Wiktionary), and the
+photographs carry their own per-file Creative Commons terms. **Read
+[`NOTICE.md`](NOTICE.md) before reusing any of it** — the three layers are not
+interchangeable.
+
+Not affiliated with Fugo Games or *Words of Wonders*.
