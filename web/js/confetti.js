@@ -7,7 +7,11 @@ export function confettiBurst(canvas, { count = 140, duration = 2400 } = {}) {
   const rect = canvas.getBoundingClientRect();
   canvas.width = rect.width * dpr;
   canvas.height = rect.height * dpr;
-  const g = canvas.getContext('2d');
+  // getContext returns null rather than throwing when a browser will not give
+  // out another 2D context – some in-app webviews do exactly that. Confetti is
+  // a garnish, so skip it quietly instead of taking the caller down with us.
+  const g = canvas.getContext && canvas.getContext('2d');
+  if (!g) return;
   g.scale(dpr, dpr);
 
   const W = rect.width, H = rect.height;

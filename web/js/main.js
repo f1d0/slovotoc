@@ -648,6 +648,15 @@ function totalStars(p) {
   return Object.values(p.stars ?? {}).reduce((a, b) => a + b, 0);
 }
 
+// Fanfare and confetti are garnish. A player once sat on a completed level
+// that would not finish, because the confetti canvas refused a 2D context and
+// the exception took the level-advance timer down with it. Nothing decorative
+// is allowed to stand between the player and their next level again.
+function celebrate() {
+  try { sndFanfare(); } catch { /* no sound is fine */ }
+  try { confettiBurst(els.confetti); } catch { /* no confetti is fine */ }
+}
+
 // The end screen is also what a finished player sees on every later visit, so
 // it must be reachable without replaying – and paying for – the last level.
 function showAllDone() {
@@ -683,7 +692,7 @@ function levelComplete() {
   completing = true;
   busy = true;
   wheel.setEnabled(false);
-  if (dailyMode) return setTimeout(() => { sndFanfare(); confettiBurst(els.confetti); finishDaily(); }, 700);
+  if (dailyMode) return setTimeout(() => { celebrate(); finishDaily(); }, 700);
 
   const wordsN = level.words.length;
   const stars = starsEarned();
@@ -698,8 +707,7 @@ function levelComplete() {
   const lastLevel = player.levelIndex === LEVELS.length - 1;
 
   els.progressFill.style.width = `${((inPack + 1) / pack.levels.length) * 100}%`;
-  sndFanfare();
-  confettiBurst(els.confetti);
+  celebrate();
 
   setTimeout(() => {
     setCoins(player.coins + reward, true);

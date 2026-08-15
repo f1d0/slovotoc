@@ -201,6 +201,41 @@ async function startGame(page, name = 'Filip') {
   await page.__ctx.close();
 }
 
+// ---------------------------------------------------------------- 9
+// Reported from the wild: a full crossword that would not finish. The
+// confetti canvas returned no 2D context, the exception escaped, and it took
+// the level-advance timer with it. Decoration must never block progress.
+{
+  const page = await fresh({
+    init: () => {
+      const real = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+        if (type === '2d' && this.id === 'confetti') return null;
+        return real.call(this, type, ...rest);
+      };
+      // and a browser that refuses audio outright
+      delete window.AudioContext;
+      delete window.webkitAudioContext;
+    },
+  });
+  await startGame(page);
+  const words = await page.evaluate(() => window.__slovotoc.level().words.map(w => w.w));
+  for (const w of words) {
+    await page.evaluate(x => window.__slovotoc.submit(x), w);
+    await page.waitForFunction(() => !window.__slovotoc.busy(), null, { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(120);
+  }
+  await page.waitForTimeout(2500);
+  const st = await page.evaluate(() => ({
+    rev: document.querySelectorAll('#grid .cell.revealed').length,
+    tot: document.querySelectorAll('#grid .cell:not(.empty)').length,
+    next: !!document.getElementById('ov-next'),
+  }));
+  record('level still finishes without canvas or audio', st.next,
+    `${st.rev}/${st.tot} revealed, next button = ${st.next}`);
+  await page.__ctx.close();
+}
+
 console.log('\n' + '='.repeat(60));
 const failed = results.filter(r => !r.ok);
 console.log(`${results.length - failed.length}/${results.length} passed`);

@@ -6,20 +6,35 @@ let enabled = true;
 export function setSoundEnabled(on) { enabled = on; }
 export function soundEnabled() { return enabled; }
 
+// Sound is decoration. A browser that refuses an AudioContext, or throws on
+// resume, must cost the player nothing – least of all a level that will not
+// finish because the fanfare failed.
+let audioBroken = false;
+
 function ac() {
-  if (!ctx) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    ctx = new AC();
+  if (audioBroken) return null;
+  try {
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) { audioBroken = true; return null; }
+      ctx = new AC();
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  } catch {
+    audioBroken = true;
+    return null;
   }
-  if (ctx.state === 'suspended') ctx.resume();
-  return ctx;
 }
 
 // call once from a user gesture so iOS unlocks audio
 export function unlock() { ac(); }
 
-function tone(freq, t0, dur, { type = 'sine', gain = 0.16, slide = 0 } = {}) {
+function tone(freq, t0, dur, opts = {}) {
+  try { play(freq, t0, dur, opts); } catch { audioBroken = true; }
+}
+
+function play(freq, t0, dur, { type = 'sine', gain = 0.16, slide = 0 } = {}) {
   const c = ac();
   if (!c || !enabled) return;
   const o = c.createOscillator();
