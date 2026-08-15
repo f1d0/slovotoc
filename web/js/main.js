@@ -1115,23 +1115,56 @@ async function fillRemotePlayers() {
   }
 }
 
-function showPlayerPicker(intro = false) {
+// Deleting a player is three deliberate taps – Upravit, then ✕, then confirm.
+// A bare ✕ on every row would sit right next to the row you tap to play, and
+// the thing being deleted cannot be undone from inside the game.
+function confirmDeletePlayer(name, back) {
+  const p = root.players[name];
+  if (!p) return back();
+  const level = Math.min(p.levelIndex + 1, LEVELS.length);
+  showOverlay(`
+    <h2>Smazat hráče?</h2>
+    <p><b>${safeAvatar(p.avatar)} ${esc(name)}</b> — úroveň ${level},
+       ${p.bonusTotal} bonusových slov, ${p.coins} mincí.</p>
+    <p class="hint-note">Postup na <b>tomto zařízení</b> se smaže a nejde vrátit.
+       Na společném žebříčku jméno zůstane — když ho zase napíšeš, hra se tě
+       zeptá, jestli chceš pokračovat odtud.</p>
+    <button class="big-btn danger" id="del-yes">Ano, smazat</button>
+    <button class="ghost-btn" id="del-no">Zpět</button>
+  `);
+  $('#del-no').onclick = back;
+  $('#del-yes').onclick = () => {
+    delete root.players[name];
+    if (root.active === name) root.active = null;
+    saveRoot(root);
+    toast(`Smazáno: ${name}`, 2200);
+    back();
+  };
+}
+
+function showPlayerPicker(intro = false, editing = false) {
   const names = Object.keys(root.players)
     .sort((a, b) => (root.players[b].lastPlayed ?? 0) - (root.players[a].lastPlayed ?? 0));
+  if (!names.length) editing = false;
   showOverlay(`
     ${intro ? `<div class="welcome">
         ${LOGO}
         <h1>Slovotoč</h1>
         <p class="tagline">Česká slovní hra — spojuj písmena,<br>hledej slova a vyplň křížovku.</p>
       </div>` : '<h2>Kdo hraje?</h2>'}
-    ${names.length ? `<div class="player-list">
+    ${names.length ? `<div class="player-list${editing ? ' editing' : ''}">
       ${names.map(n => {
         const p = root.players[n];
-        return `<button class="player-chip" data-name="${esc(n)}">
-          <em>${safeAvatar(p.avatar)}</em><b>${esc(n)}</b><span>úroveň ${Math.min(p.levelIndex + 1, LEVELS.length)}</span>
-        </button>`;
+        return `<div class="chip-row">
+          <button class="player-chip" data-name="${esc(n)}"${editing ? ' disabled' : ''}>
+            <em>${safeAvatar(p.avatar)}</em><b>${esc(n)}</b><span>úroveň ${Math.min(p.levelIndex + 1, LEVELS.length)}</span>
+          </button>
+          ${editing ? `<button class="chip-del" data-del="${esc(n)}" aria-label="Smazat ${esc(n)}">✕</button>` : ''}
+        </div>`;
       }).join('')}
-    </div>` : `<p>${intro ? 'Zadej jméno a pojď hrát — žádná registrace, žádné reklamy.' : 'Zadej své jméno a pojď hrát!'}</p>`}
+    </div>
+    <button class="link-btn" id="pp-edit">${editing ? 'Hotovo' : '✏️ Upravit hráče'}</button>`
+      : `<p>${intro ? 'Zadej jméno a pojď hrát — žádná registrace, žádné reklamy.' : 'Zadej své jméno a pojď hrát!'}</p>`}
     <div id="remote-box"></div>
     <div class="new-player">
       <input id="np-name" type="text" maxlength="14" placeholder="${names.length ? 'Nový hráč – jméno' : 'Tvoje jméno'}" autocomplete="off" />
@@ -1141,9 +1174,14 @@ function showPlayerPicker(intro = false) {
     ${INSTALL_BTN()}
   `);
   fillRemotePlayers();
-  $('#ov-rules').onclick = () => showRules(() => showPlayerPicker(intro));
-  wireInstall(() => showPlayerPicker(intro));
-  for (const chip of els.overlayCard.querySelectorAll('.player-chip')) {
+  $('#ov-rules').onclick = () => showRules(() => showPlayerPicker(intro, editing));
+  wireInstall(() => showPlayerPicker(intro, editing));
+  const edit = $('#pp-edit');
+  if (edit) edit.onclick = () => showPlayerPicker(intro, !editing);
+  for (const b of els.overlayCard.querySelectorAll('.chip-del')) {
+    b.onclick = () => confirmDeletePlayer(b.dataset.del, () => showPlayerPicker(intro, true));
+  }
+  for (const chip of els.overlayCard.querySelectorAll('.player-chip:not([disabled])')) {
     chip.onclick = () => {
       const p = root.players[chip.dataset.name];
       p.lastPlayed = Date.now();

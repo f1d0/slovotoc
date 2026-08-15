@@ -590,6 +590,45 @@ body {
   transition: background 0.15s;
 }
 .player-chip:active { background: rgba(255, 255, 255, 0.22); }
+.player-chip[disabled] { opacity: 0.75; cursor: default; }
+
+/* delete affordance – only present while the list is in edit mode */
+.chip-row { display: flex; align-items: center; gap: 8px; }
+.chip-row .player-chip { flex: 1; min-width: 0; }
+.chip-del {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 117, 118, 0.55);
+  background: rgba(255, 117, 118, 0.16);
+  color: #ff9a9b;
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.chip-del:active { background: rgba(255, 117, 118, 0.34); }
+
+.link-btn {
+  display: block;
+  margin: 10px auto 0;
+  border: none;
+  background: none;
+  color: #fff;
+  opacity: 0.72;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.big-btn.danger {
+  background: linear-gradient(180deg, #ff7576, #e2494b);
+  color: #fff;
+  box-shadow: 0 4px 0 #b93739;
+}
 .player-chip.remote { border-style: dashed; border-color: rgba(255, 201, 60, 0.5); }
 .picker-sub {
   font-size: 12.5px;
