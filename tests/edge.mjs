@@ -236,6 +236,38 @@ async function startGame(page, name = 'Filip') {
   await page.__ctx.close();
 }
 
+// ---------------------------------------------------------------- 10
+// Reported twice from the wild: a complete crossword that would not finish.
+// Progress is saved the instant the last word lands, but the level is marked
+// done a beat later — so a tab discarded in between is saved as "all words
+// found, level unfinished". Reopening that must not strand the player.
+{
+  const page = await fresh();
+  await startGame(page);
+  const words = await page.evaluate(() => window.__slovotoc.level().words.map(w => w.w));
+  // exactly the save a discarded tab leaves behind
+  await page.evaluate(ws => {
+    const r = JSON.parse(localStorage.getItem('slovotoc-v2'));
+    const p = r.players[r.active];
+    p.cur = { idx: p.levelIndex, found: ws, hinted: [], bonus: [] };
+    localStorage.setItem('slovotoc-v2', JSON.stringify(r));
+  }, words);
+  const before = await page.evaluate(() => window.__slovotoc.state().level);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__slovotoc?.level(), null, { timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(4000);
+  const st = await page.evaluate(() => ({
+    rev: document.querySelectorAll('#grid .cell.revealed').length,
+    tot: document.querySelectorAll('#grid .cell:not(.empty)').length,
+    finished: !!document.getElementById('ov-next'),
+    level: window.__slovotoc.state().level,
+  }));
+  record('a save captured mid-completion still finishes',
+    st.finished && st.level === before + 1,
+    `${st.rev}/${st.tot} revealed, level ${before} -> ${st.level}, next button = ${st.finished}`);
+  await page.__ctx.close();
+}
+
 console.log('\n' + '='.repeat(60));
 const failed = results.filter(r => !r.ok);
 console.log(`${results.length - failed.length}/${results.length} passed`);

@@ -11,7 +11,8 @@
     "test:data": "node tests/data.mjs",
     "test:edge": "node tests/edge.mjs",
     "levels": "node tools/generate-levels.mjs",
-    "backgrounds": "node tools/fetch-backgrounds.mjs"
+    "backgrounds": "node tools/fetch-backgrounds.mjs",
+    "test:levels": "node tests/all-levels.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.49.0"

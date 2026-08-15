@@ -299,6 +299,13 @@ function loadLevel(restore = false, opts = {}) {
   updateToolButtons();
   setCoins(player.coins);
   persist();
+
+  // Progress is saved the moment the last word lands, but the level is only
+  // marked finished a beat later. A tab discarded in between — routine on a
+  // phone with many tabs open — is saved as "every word found, level not
+  // done", and restoring that used to show a full crossword that never
+  // ended. Finish it on the way back in.
+  if (restore && grid.allRevealed()) levelComplete();
 }
 
 function wordFound(word, extra = []) {
@@ -1248,6 +1255,17 @@ els.sound.addEventListener('click', () => {
 });
 
 window.addEventListener('resize', () => grid && grid.fit(els.board));
+
+// Last-resort safety net. A full crossword must always end the level, no
+// matter which path revealed the final square — a word, a hint, an animation
+// that landed late, or something not thought of yet. Two players have now
+// been walled in behind a grid that was visibly complete and would not
+// finish; whatever the next cause turns out to be, this catches it.
+// Normal completion is synchronous and always wins the race.
+setInterval(() => {
+  if (!player || !grid || completing) return;
+  if (grid.allRevealed()) levelComplete();
+}, 1200);
 
 // Without the levels there is no game, and failing silently left the player
 // looking at an empty screen with nothing to do about it.

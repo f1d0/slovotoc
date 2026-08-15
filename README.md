@@ -94,8 +94,9 @@ while developing.
 ## Tests
 
 ```bash
-npm run test:data    # structural checks on levels.json, no browser
-npm run test:edge    # eight ways to break the game, in a real browser
+npm run test:data      # structural checks on levels.json, no browser
+npm run test:edge      # ten ways to break the game, in a real browser
+npm run test:levels    # play all 240 levels to the end (~10 min)
 ```
 
 `tests/data.mjs` checks every level: words buildable from the wheel, letters
@@ -116,8 +117,13 @@ actually in this game:
 | `localStorage` blocked | private browsing threw on write |
 | blank player name | started a game as nobody |
 | the same word submitted twice | counted twice |
+| no canvas, no audio | confetti threw and took the level-advance timer with it |
+| a save captured mid-completion | reopened to a full crossword that never finished |
 
-If you regenerate levels, run `npm run test:data` before shipping.
+`tests/all-levels.mjs` plays every level in the game to the end, submitting
+only the bare spellings a player can actually produce on the wheel. It is the
+answer to "is any level unwinnable" — run it after regenerating levels, along
+with `npm run test:data`.
 
 ## Regenerating the levels
 
