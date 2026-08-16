@@ -18,7 +18,7 @@ const BONUS_MILESTONE = 10;      // every N bonus words…
 const BONUS_MILESTONE_COINS = 15; // …pay this many coins
 const STAR3_BONUS_WORDS = 3;     // bonus words needed for the third star
 const DAILY_REWARD = 40;         // coins for finishing the daily challenge
-const REPO_URL = 'https://github.com/f1d0/wowczechversion';
+const REPO_URL = 'https://github.com/f1d0/slovotoc';
 
 // The wheel carries bare letters, so a word is matched by its de-accented
 // form and the accents are written in for the player ("Klasik"). Only when
