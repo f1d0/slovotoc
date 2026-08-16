@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.DS_Store
+
+# Netlify CLI local state (links this checkout to a site)
+.netlify/

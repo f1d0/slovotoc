@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Slovotoč">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#2c3a7d"/>
+      <stop offset="0.55" stop-color="#3a2f74"/>
+      <stop offset="1" stop-color="#4d2a6b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.3" cy="0.85" r="0.85">
+      <stop offset="0" stop-color="#ffc93c" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#ffc93c" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rope" x1="0" y1="0" x2="0.5" y2="1">
+      <stop offset="0" stop-color="#ffd964"/>
+      <stop offset="1" stop-color="#f5a623"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e8ecf7"/>
+    </linearGradient>
+    <linearGradient id="tileGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffdc7a"/>
+      <stop offset="1" stop-color="#ffc22e"/>
+    </linearGradient>
+    <filter id="drop" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#0d1330" flood-opacity="0.45"/>
+    </filter>
+    <filter id="ropeGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- plate -->
+  <rect width="512" height="512" rx="114" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="114" fill="url(#glow)"/>
+
+  <!-- the wheel the letters sit on -->
+  <circle cx="256" cy="256" r="170" fill="#ffffff" fill-opacity="0.06"/>
+  <circle cx="256" cy="256" r="170" fill="none" stroke="#ffffff" stroke-opacity="0.24" stroke-width="7"/>
+  <g fill="#ffffff" fill-opacity="0.20">
+    <circle cx="256" cy="384" r="9"/>
+    <circle cx="367" cy="192" r="9"/>
+    <circle cx="145" cy="192" r="9"/>
+  </g>
+
+  <!-- the swipe that spells SLO(vo) -->
+  <path d="M256 128 Q150 176 145 320 Q256 398 367 320"
+        fill="none" stroke="#1b1240" stroke-opacity="0.35" stroke-width="34"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <g filter="url(#ropeGlow)">
+    <path d="M256 128 Q150 176 145 320 Q256 398 367 320"
+          fill="none" stroke="url(#rope)" stroke-width="27"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- letter tiles -->
+  <g filter="url(#drop)">
+    <circle cx="256" cy="128" r="62" fill="url(#tile)"/>
+    <circle cx="145" cy="320" r="62" fill="url(#tileGold)"/>
+    <circle cx="367" cy="320" r="62" fill="url(#tile)"/>
+  </g>
+  <g font-family="Nunito, 'Trebuchet MS', 'Arial Black', Helvetica, sans-serif"
+     font-weight="900" font-size="80" text-anchor="middle">
+    <text x="256" y="157" fill="#2b3050">S</text>
+    <text x="145" y="349" fill="#6b4400">L</text>
+    <text x="367" y="349" fill="#2b3050">O</text>
+  </g>
+</svg>
