@@ -1,0 +1,43 @@
+# Slovotoč – words players reported as missing.
+#
+# The two big sources (a hunspell-derived form list and Wiktionary) between
+# them cover ordinary Czech well, dialect included: šufánek, erteple, škopek
+# and cyp are all in there. What they do not carry is the long tail of
+# regional words that never made it into a national dictionary — and those
+# are exactly the ones somebody's grandmother uses, so the game refusing them
+# feels wrong in a way that refusing an obscure participle does not.
+#
+# This file is that tail, added by hand, one report at a time. Bonus words
+# only: nothing here can become a crossword answer, so a wrong entry costs
+# nothing but a word that should not have counted.
+#
+# Rules for adding: it has to be a real word somebody actually says, it has
+# to pass the kid-safe filter like everything else, and write down who asked
+# and what it means so the next person can judge it.
+#
+# Run tools/add-words.mjs after editing. That is all it takes — no
+# dictionaries to download and no crossword is touched.
+
+# lokše – potato flatbread, eaten with duck. Moravia and Slovakia. The
+# Institute of the Czech Language says outright that the word is not in the
+# explanatory dictionaries and its gender is unsettled: feminine "lokše"
+# (růže pattern) is the likeliest standard form, with "lokeš"/"lokš" as a
+# masculine variant. Both go in — the game is not the place to arbitrate.
+# Reported by Filip, level 31.
+lokše
+lokší
+lokším
+lokších
+lokšemi
+lokš
+lokeš
+
+# kolec – a barrow for wheeling things about, Strakonice and around.
+# Reported by Filip.
+kolec
+kolce
+kolci
+kolců
+kolcem
+kolcům
+kolcích
