@@ -787,6 +787,15 @@ function syncScore(immediate = false) {
     return Promise.resolve();
   }
   clearTimeout(syncTimer);
+  // A stored PIN that no longer matches would otherwise mean scores quietly
+  // stop saving. Notice it once, forget the bad PIN, and let the player type
+  // it again next time they sign in.
+  const onPushFail = err => {
+    if (!err?.wrongPin) return;
+    player.pin = null;
+    saveRoot(root);
+    toast('PIN nesedí — postup se neukládá. Přihlas se prosím znovu.', 4000);
+  };
   const doPush = () => pushScorePin({
     deviceId: root.deviceId,
     name: player.name,
@@ -797,7 +806,7 @@ function syncScore(immediate = false) {
     coins: player.coins,
     stars: totalStars(player),
     streak: player.daily?.streak ?? 0,
-  }).catch(() => { /* offline – next sync will catch up */ });
+  }).catch(err => { onPushFail(err); /* offline – next sync catches up */ });
   if (immediate) return doPush();
   syncTimer = setTimeout(doPush, 2500);
   return Promise.resolve();

@@ -117,7 +117,8 @@ async function rpc(fn, args) {
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     const err = new Error(`${fn} ${res.status}`);
-    err.wrongPin = res.status === 400 && /wrong pin/i.test(body);
+    // PostgREST maps the function's 28000 to 403, not 400
+    err.wrongPin = (res.status === 403 || res.status === 400) && /wrong pin/i.test(body);
     err.body = body;
     throw err;
   }
