@@ -841,3 +841,37 @@ body {
 /* picking between words that share a bare spelling (může / muže) */
 .choice-list { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
 .choice-list .big-btn { margin-top: 0; }
+
+/* ---------- PIN ---------- */
+.pin-input {
+  display: block;
+  width: 160px;
+  margin: 14px auto 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  font-family: inherit;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0.32em;
+  text-align: center;
+  text-indent: 0.32em;   /* keeps the tracked digits visually centred */
+  padding: 10px 0;
+  outline: none;
+}
+.pin-input:focus { border-color: var(--accent); }
+.pin-hint-input {
+  display: block;
+  width: 100%;
+  margin: 10px 0 2px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.22);
+  color: #fff;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 11px 14px;
+  outline: none;
+}

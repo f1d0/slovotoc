@@ -1,7 +1,10 @@
 // Slovotoč – main game flow.
 
 import { loadRoot, saveRoot, newPlayer, claimLegacy, AVATARS } from './state.js';
-import { pushScore, fetchTop, fetchPlayer } from './leaderboard.js';
+import {
+  pushScore, pushScorePin, fetchTop, fetchPlayer,
+  nameStatus, signIn, setPin, pinSupported,
+} from './leaderboard.js';
 import { Wheel, UC } from './wheel.js';
 import { Grid } from './grid.js';
 import { confettiBurst } from './confetti.js';
@@ -18,7 +21,7 @@ const BONUS_MILESTONE = 10;      // every N bonus words…
 const BONUS_MILESTONE_COINS = 15; // …pay this many coins
 const STAR3_BONUS_WORDS = 3;     // bonus words needed for the third star
 const DAILY_REWARD = 40;         // coins for finishing the daily challenge
-const REPO_URL = 'https://github.com/f1d0/wowczechversion';
+const REPO_URL = 'https://github.com/f1d0/slovotoc';
 
 // The wheel carries bare letters, so a word is matched by its de-accented
 // form and the accents are written in for the player ("Klasik"). Only when
@@ -748,6 +751,7 @@ function levelComplete() {
     $('#ov-next').onclick = () => {
       hideOverlay();
       loadLevel();
+      maybeNudgePin();   // once, and only once there is progress worth locking
     };
   }, 900);
 }
@@ -783,16 +787,26 @@ function syncScore(immediate = false) {
     return Promise.resolve();
   }
   clearTimeout(syncTimer);
-  const doPush = () => pushScore({
+  // A stored PIN that no longer matches would otherwise mean scores quietly
+  // stop saving. Notice it once, forget the bad PIN, and let the player type
+  // it again next time they sign in.
+  const onPushFail = err => {
+    if (!err?.wrongPin) return;
+    player.pin = null;
+    saveRoot(root);
+    toast('PIN nesedí — postup se neukládá. Přihlas se prosím znovu.', 4000);
+  };
+  const doPush = () => pushScorePin({
     deviceId: root.deviceId,
     name: player.name,
+    pin: player.pin ?? null,
     avatar: player.avatar,
     levels: player.best,
     bonus: player.bonusTotal,
     coins: player.coins,
     stars: totalStars(player),
     streak: player.daily?.streak ?? 0,
-  }).catch(() => { /* offline – next sync will catch up */ });
+  }).catch(err => { onPushFail(err); /* offline – next sync catches up */ });
   if (immediate) return doPush();
   syncTimer = setTimeout(doPush, 2500);
   return Promise.resolve();
@@ -857,11 +871,13 @@ async function showLeaderboard() {
     <button class="big-btn" id="ov-switch">Vyměnit hráče</button>
     <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
     <button class="ghost-btn" id="ov-about">ℹ️ O hře a fotkách</button>
+    <button class="ghost-btn" id="ov-pin">${player?.pin ? '🔒 Změnit PIN' : '🔒 Zamknout jméno PINem'}</button>
     ${INSTALL_BTN()}
   `);
   $('#ov-switch').onclick = () => showPlayerPicker();
   $('#ov-close').onclick = hideOverlay;
   $('#ov-about').onclick = showAbout;
+  $('#ov-pin').onclick = () => showSetPin({ back: showLeaderboard });
   wireInstall(showLeaderboard);
   $('#ov-daily').onclick = () => {
     if (dailyDone()) { toast('Dnešní výzvu už máš hotovou 🎉 Vrať se zítra!'); return; }
@@ -954,6 +970,7 @@ function startAs(name, { recover = true } = {}) {
     loadLevel(true);
   }
   updateDailyBadge();
+  maybeWarnInApp();
   // reload the level once progress has been pulled from the shared board
   if (recover) {
     recoverIfEmpty(name).then(found => {
@@ -1082,8 +1099,10 @@ function showRules(back) {
 
 // Copies a player's progress from the shared board onto this device, so the
 // same person can carry on from a different phone or browser.
-function adoptPlayer(row) {
+function adoptPlayer(row, pin = null, offerPin = false) {
   const p = newPlayer(row.name, cleanAvatar(row.avatar));
+  p.pin = pin;                 // remembered so it is typed once per device
+  p.pinAsked = pin != null;
   p.levelIndex = Math.min(row.levels ?? 0, LEVELS.length - 1);
   p.best = row.levels ?? 0;
   p.coins = row.coins ?? p.coins;
@@ -1093,6 +1112,7 @@ function adoptPlayer(row) {
   root.players[row.name] = p;
   saveRoot(root);
   startAs(row.name, { recover: false });
+  if (offerPin) setTimeout(() => showSetPin({ nudge: true, back: hideOverlay }), 1200);
   toast(`Vítej zpátky, ${row.name}! Pokračuješ na úrovni ${p.levelIndex + 1}.`, 3000);
 }
 
@@ -1120,6 +1140,226 @@ async function fillRemotePlayers() {
   } catch {
     box.innerHTML = '';
   }
+}
+
+// ---------- in-app browsers ----------
+
+// Facebook, Messenger and Instagram open links in their own browser, which
+// keeps its own storage. Progress made there is invisible to Safari, to
+// Chrome and to the installed app — which has now cost two players their
+// afternoon. The game cannot bridge that; it can only say so.
+const IN_APP = /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|MicroMessenger/i
+  .test(navigator.userAgent);
+
+function showInAppWarning(back) {
+  const android = /Android/i.test(navigator.userAgent);
+  showOverlay(`
+    <h2>📱 Hraješ v prohlížeči Messengeru</h2>
+    <p>Tenhle prohlížeč si drží <b>vlastní paměť</b>, oddělenou od Safari,
+       Chromu i od hry přidané na plochu. Co tady odehraješ, se ti jinde
+       samo neukáže.</p>
+    <p class="hint-note">O postup nepřijdeš — ukládá se pod tvým jménem na
+       společný žebříček. Ale pokaždé, když přejdeš jinam, ho musíš zase
+       vytáhnout přes jméno.</p>
+    <h3 class="sub-h">Lepší je otevřít hru napřímo</h3>
+    <ul class="rules-list">
+      <li><em>${android ? '⋮' : '⋯'}</em><div>
+        <b>Otevřít v prohlížeči</b>
+        <span>Nahoře ${android ? 'tři tečky' : 'tlačítko ⋯'} → <b>Otevřít
+        v ${android ? 'Chromu' : 'Safari'}</b>. Pak už jsi v normálním prohlížeči.</span></div></li>
+      <li><em>📲</em><div><b>A pak si hru přidej na plochu</b>
+        <span>Otevře se na celou obrazovku, funguje i bez internetu a postup
+        zůstává na jednom místě.</span></div></li>
+    </ul>
+    <button class="big-btn" id="ia-copy">📋 Zkopírovat odkaz na hru</button>
+    <button class="ghost-btn" id="ia-ok">Rozumím, hraju dál tady</button>
+  `);
+  $('#ia-copy').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText('https://slovotoc.cz');
+      toast('Odkaz zkopírován — vlož ho do Safari nebo Chromu 📋', 3200);
+    } catch { toast('Zkopíruj prosím ručně: slovotoc.cz', 3200); }
+  };
+  $('#ia-ok').onclick = back;
+}
+
+// Once per device, and never when the game is already running standalone.
+function maybeWarnInApp() {
+  if (!IN_APP || isInstalled() || root.sawInApp) return false;
+  root.sawInApp = true;
+  saveRoot(root);
+  showInAppWarning(hideOverlay);
+  return true;
+}
+
+// ---------- locking your own name ----------
+
+// Offered once, after the player has something worth protecting. Nagging
+// somebody on level 1 to secure an empty profile would just be noise.
+const PIN_NUDGE_LEVEL = 3;
+
+function showSetPin({ back, nudge = false }) {
+  const name = player.name;
+  showOverlay(`
+    <h2>${nudge ? '🔒 Zamkni si jméno' : '🔒 Nastavit PIN'}</h2>
+    ${nudge ? `<p><b>${esc(name)}</b>, na žebříčku ti přibývají úrovně,
+        hvězdy a bonusová slova. Zatím ale stačí, aby tvoje jméno někdo
+        napsal, a hraje za tebe.</p>` : ''}
+    <p>Vyber si <b>čtyři číslice</b>. Budeš je potřebovat, až se přihlásíš
+       na jiném zařízení — na mobilu, na tabletu, v jiném prohlížeči.</p>
+    ${pinRow('sp-pin')}
+    <p style="font-size:13px;opacity:0.85;margin-top:10px">Nápověda pro
+       případ, že ho zapomeneš (nepiš do ní samotný PIN):</p>
+    <input id="sp-hint" class="pin-hint-input" maxlength="40" autocomplete="off"
+           placeholder="např. Bájkovo číslo, den narozenin…" />
+    <p id="sp-msg" class="hint-note hidden"></p>
+    <button class="big-btn" id="sp-go">Zamknout jméno</button>
+    <button class="ghost-btn" id="sp-later">${nudge ? 'Teď ne, připomeň mi to' : 'Zpět'}</button>
+    <button class="link-btn" id="sp-why">❓ Proč PIN a ne heslo nebo e-mail?</button>
+  `);
+  const pin = $('#sp-pin');
+  const hint = $('#sp-hint');
+  const msg = $('#sp-msg');
+  const show = t => { msg.textContent = t; msg.classList.remove('hidden'); };
+  pin.focus();
+  $('#sp-why').onclick = () => showPinWhy(() => showSetPin({ back, nudge }));
+  $('#sp-later').onclick = () => {
+    // asked once per level milestone, not on every visit
+    player.pinAsked = true;
+    saveRoot(root);
+    back();
+  };
+  $('#sp-go').onclick = async () => {
+    const v = pin.value.trim();
+    if (!/^[0-9]{4}$/.test(v)) { show('PIN musí být přesně čtyři číslice.'); return; }
+    if (hint.value.includes(v)) { show('Nápověda nesmí obsahovat samotný PIN 🙂'); return; }
+    const btn = $('#sp-go');
+    btn.disabled = true; btn.textContent = 'Ukládám…';
+    let ok = false;
+    try { ok = await setPin(name, player.pin ?? null, v, hint.value.trim()); }
+    catch { ok = false; }
+    btn.disabled = false; btn.textContent = 'Zamknout jméno';
+    if (!ok) { show('Nepovedlo se — nejsi online, nebo zámek ještě není zapnutý.'); return; }
+    player.pin = v;
+    player.pinAsked = true;
+    saveRoot(root);
+    toast(`🔒 Jméno ${name} je zamčené`, 2600);
+    back();
+  };
+}
+
+// Shown once the player has a few levels behind them and no PIN yet.
+function maybeNudgePin() {
+  if (!player || player.pin || player.pinAsked) return;
+  if (bestOf(player) < PIN_NUDGE_LEVEL) return;
+  if (pinSupported() === false) return;   // migration not run yet
+  showSetPin({ nudge: true, back: hideOverlay });
+}
+
+// ---------- signing in to a name ----------
+
+const PIN_WHY = `
+  <h2>❓ Proč PIN?</h2>
+  <p>Jméno je ve Slovotoči tvoje identita — pod ním ti na žebříčku sedí
+     úrovně, hvězdy i bonusová slova. Bez zámku by stačilo, aby ho někdo
+     napsal, a hrál by za tebe.</p>
+  <p><b>Čtyři číslice</b> proto, že nechceme e-mail ani heslo. E-mail děti
+     nemají a přihlašování přes Google jim ho vůbec nedovolí založit.
+     Čtyři číslice si zapamatuje každý a fungují na jakémkoli zařízení —
+     na mobilu, na tabletu, v jiném prohlížeči. Nic se neváže na telefon.</p>
+  <p class="hint-note">PIN nikam neposíláme a nikde se nezobrazuje —
+     v databázi je z něj jen otisk, ze kterého se původní číslice
+     nedají zpětně zjistit.</p>
+  <p style="font-size:13px;opacity:0.8">Zapomenutý PIN umí resetovat jen
+     Filip. Proto si k němu můžeš uložit vlastní nápovědu — ta se ukáže,
+     až se spleteš.</p>`;
+
+function showPinWhy(back) {
+  showOverlay(PIN_WHY + '<button class="big-btn" id="ov-back">Rozumím</button>');
+  $('#ov-back').onclick = back;
+}
+
+function pinRow(id) {
+  return `<input id="${id}" type="text" inputmode="numeric" pattern="[0-9]*"
+            maxlength="4" class="pin-input" placeholder="••••" autocomplete="off" />`;
+}
+
+function createPlayer(name) {
+  const used = new Set(Object.values(root.players).map(p => p.avatar));
+  const free = AVATARS.filter(a => !used.has(a));
+  const pool = free.length ? free : AVATARS;
+  const avatar = pool[Math.floor(Math.random() * pool.length)];
+  root.players[name] = newPlayer(name, avatar);
+  claimLegacy(root, root.players[name]);
+  root.players[name].lastPlayed = Date.now();
+  startAs(name);
+}
+
+// The name is locked. Only the PIN gets you in.
+function askPin(name, status, back) {
+  showOverlay(`
+    <h2>🔒 ${esc(name)}</h2>
+    <p>Tohle jméno je zamčené PINem. Zadej ho a pokračuj tam, kde jsi
+       skončil${status?.levels ? ` — úroveň ${status.levels + 1}` : ''}.</p>
+    ${pinRow('pin-in')}
+    <p id="pin-msg" class="hint-note hidden"></p>
+    <button class="big-btn" id="pin-go">Pokračovat</button>
+    <button class="ghost-btn" id="pin-other">Zvolit jiné jméno</button>
+    <button class="link-btn" id="pin-why">❓ Proč PIN?</button>
+  `);
+  const inp = $('#pin-in');
+  const msg = $('#pin-msg');
+  inp.focus();
+  $('#pin-other').onclick = back;
+  $('#pin-why').onclick = () => showPinWhy(() => askPin(name, status, back));
+  const submit = async () => {
+    const pin = inp.value.trim();
+    if (!/^[0-9]{4}$/.test(pin)) { show('PIN má čtyři číslice.'); return; }
+    const btn = $('#pin-go');
+    btn.disabled = true; btn.textContent = 'Ověřuji…';
+    let r = null;
+    try { r = await signIn(name, pin); } catch { /* offline */ }
+    btn.disabled = false; btn.textContent = 'Pokračovat';
+    if (!r) { show('Nejsi online — zkus to prosím znovu.'); return; }
+    if (r.reason === 'blocked') {
+      show('Moc chybných pokusů. Zkus to prosím za čtvrt hodiny.' +
+           (r.hint ? ` Nápověda: „${esc(r.hint)}"` : ''));
+      return;
+    }
+    if (!r.ok) {
+      show('PIN nesedí.' + (r.hint ? ` Tvoje nápověda: „${esc(r.hint)}"` : ''));
+      inp.value = '';
+      inp.focus();
+      return;
+    }
+    adoptPlayer({ name, avatar: r.avatar, levels: r.levels, bonus: r.bonus,
+                  coins: r.coins, stars: r.stars, streak: r.streak }, pin);
+  };
+  function show(t) { msg.innerHTML = t; msg.classList.remove('hidden'); }
+  $('#pin-go').onclick = submit;
+  inp.onkeydown = e => { if (e.key === 'Enter') submit(); };
+}
+
+// The name is taken but nobody has locked it. Could be them on a new
+// device, could be a newcomer who picked a name in use — the game cannot
+// tell, so it asks rather than silently handing over someone's progress.
+function askIsItYou(name, status, back) {
+  showOverlay(`
+    <h2>Jméno „${esc(name)}" už někdo má</h2>
+    <p>Na žebříčku je hráč tohoto jména a je na úrovni
+       <b>${(status.levels ?? 0) + 1}</b>.</p>
+    <button class="big-btn" id="iy-yes">To jsem já — pokračovat</button>
+    <button class="ghost-btn" id="iy-no">To nejsem já — zvolím jiné jméno</button>
+    <p class="hint-note">Až budeš uvnitř, nabídneme ti zamknout jméno PINem,
+       aby se příště nikdo takhle nemusel rozhodovat.</p>
+  `);
+  $('#iy-no').onclick = back;
+  $('#iy-yes').onclick = async () => {
+    let row = null;
+    try { row = await fetchPlayer(name); } catch { /* offline */ }
+    if (row) adoptPlayer(row, null, true);   // offer the lock straight away
+    else createPlayer(name);
+  };
 }
 
 // Deleting a player is three deliberate taps – Upravit, then ✕, then confirm.
@@ -1199,29 +1439,38 @@ function showPlayerPicker(intro = false, editing = false) {
   const go = async () => {
     const name = input.value.trim();
     if (!name) { input.focus(); return; }
-    // Typing a name that already exists on the shared board continues that
-    // player rather than starting a second, empty profile with the same name.
-    if (!root.players[name]) {
-      const btn = $('#np-go');
-      const label = btn.textContent;
-      btn.textContent = 'Hledám…';
-      btn.disabled = true;
+    // Already a profile on this device: nothing to check, it is theirs.
+    if (root.players[name]) {
+      root.players[name].lastPlayed = Date.now();
+      return startAs(name);
+    }
+    const btn = $('#np-go');
+    const label = btn.textContent;
+    btn.textContent = 'Hledám…';
+    btn.disabled = true;
+    let status = null;
+    let offline = false;
+    try { status = await nameStatus(name); } catch { offline = true; }
+    btn.textContent = label;
+    btn.disabled = false;
+
+    // Already known to be unreachable — asking a second time would just make
+    // the player wait through another timeout before the game starts.
+    if (offline) return createPlayer(name);
+
+    // Reachable, but the migration has not been run yet: the old path.
+    if (status === null) {
       try {
         const row = await fetchPlayer(name);
         if (row && (row.levels ?? 0) > 0) return adoptPlayer(row);
-      } catch { /* offline – start a fresh profile below */ }
-      btn.textContent = label;
-      btn.disabled = false;
+      } catch { /* fresh profile below */ }
+      return createPlayer(name);
     }
-    if (!root.players[name]) {
-      const used = new Set(Object.values(root.players).map(p => p.avatar));
-      const free = AVATARS.filter(a => !used.has(a));
-      const avatar = (free.length ? free : AVATARS)[Math.floor(Math.random() * (free.length ? free.length : AVATARS.length))];
-      root.players[name] = newPlayer(name, avatar);
-      claimLegacy(root, root.players[name]);
-    }
-    root.players[name].lastPlayed = Date.now();
-    startAs(name);
+    if (!status.taken) return createPlayer(name);
+    if (status.locked) return askPin(name, status, () => showPlayerPicker(intro, editing));
+    // Taken but not locked yet: it may be them coming back on a new device,
+    // or a newcomer who picked a name already in use. Only they can say.
+    return askIsItYou(name, status, () => showPlayerPicker(intro, editing));
   };
   $('#np-go').onclick = go;
   input.onkeydown = e => { if (e.key === 'Enter') go(); };
