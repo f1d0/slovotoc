@@ -18,6 +18,9 @@ export function newPlayer(name, avatar) {
     stars: {},          // levelIndex -> 1..3
     daily: null,        // { day, streak, best } for the daily challenge
     sawTip: false,
+    pin: null,          // four digits, remembered on this device so it is
+                        // typed once per device rather than once per session
+    pinAsked: false,    // whether we have already offered to lock the name
     cur: null,          // mid-level progress: { idx, found: [], hinted: [], bonus: [] }
     createdAt: Date.now(),
   };

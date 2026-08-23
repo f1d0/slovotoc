@@ -1,7 +1,10 @@
 // Slovotoč – main game flow.
 
 import { loadRoot, saveRoot, newPlayer, claimLegacy, AVATARS } from './state.js';
-import { pushScore, fetchTop, fetchPlayer } from './leaderboard.js';
+import {
+  pushScore, pushScorePin, fetchTop, fetchPlayer,
+  nameStatus, signIn, setPin, pinSupported,
+} from './leaderboard.js';
 import { Wheel, UC } from './wheel.js';
 import { Grid } from './grid.js';
 import { confettiBurst } from './confetti.js';
@@ -783,9 +786,10 @@ function syncScore(immediate = false) {
     return Promise.resolve();
   }
   clearTimeout(syncTimer);
-  const doPush = () => pushScore({
+  const doPush = () => pushScorePin({
     deviceId: root.deviceId,
     name: player.name,
+    pin: player.pin ?? null,
     avatar: player.avatar,
     levels: player.best,
     bonus: player.bonusTotal,

@@ -93,3 +93,71 @@ export async function fetchTop(limit = 100) {
   if (!res.ok) throw new Error(`fetchTop ${res.status}`);
   return res.json();
 }
+
+// ---------------------------------------------------------------- PIN
+// A name can be locked with a four-digit PIN. The PIN is verified in the
+// database, never here — see docs/leaderboard-pin.sql for why. These calls
+// go to Postgres functions rather than the table.
+//
+// Everything degrades: until the migration has been run the functions do
+// not exist, the calls 404, and the game falls back to the old direct
+// write. That way deploying the client and running the SQL do not have to
+// happen at the same moment.
+let rpcReady = null; // null = unknown, true/false once we have seen a reply
+
+async function rpc(fn, args) {
+  const res = await fetch(`${URL.replace(/\/leaderboard$/, '')}/rpc/${fn}`, {
+    method: 'POST',
+    headers: HEADERS,
+    body: JSON.stringify(args),
+    signal: timeoutSignal(),
+  });
+  if (res.status === 404) { rpcReady = false; return { missing: true }; }
+  rpcReady = true;
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    const err = new Error(`${fn} ${res.status}`);
+    err.wrongPin = res.status === 400 && /wrong pin/i.test(body);
+    err.body = body;
+    throw err;
+  }
+  return { data: await res.json() };
+}
+
+export function pinSupported() { return rpcReady; }
+
+// Is this name free, and is it locked? Used before creating a player so a
+// newcomer is told the name is taken instead of silently adopting someone.
+export async function nameStatus(name) {
+  const { missing, data } = await rpc('player_status', { p_name: name });
+  if (missing) return null;
+  const row = Array.isArray(data) ? data[0] : data;
+  return row ? { taken: !!row.taken, locked: !!row.locked, levels: row.levels ?? 0, avatar: row.avatar } : null;
+}
+
+// Returns { ok, reason, hint, ...progress }. reason is one of
+// unknown | nopin | ok | wrong | blocked.
+export async function signIn(name, pin) {
+  const { missing, data } = await rpc('sign_in', { p_name: name, p_pin: pin ?? null });
+  if (missing) return null;
+  const row = Array.isArray(data) ? data[0] : data;
+  return row ?? null;
+}
+
+export async function setPin(name, oldPin, newPin, hint) {
+  const { missing } = await rpc('set_pin', {
+    p_name: name, p_old_pin: oldPin ?? null, p_new_pin: newPin, p_hint: hint ?? null,
+  });
+  return !missing;
+}
+
+// Score push that carries the PIN. Falls back to the direct table write
+// when the migration has not been run yet.
+export async function pushScorePin(p) {
+  const { missing } = await rpc('save_score', {
+    p_name: p.name, p_pin: p.pin ?? null, p_device: p.deviceId, p_avatar: p.avatar,
+    p_levels: p.levels, p_bonus: p.bonus, p_coins: p.coins,
+    p_stars: p.stars, p_streak: p.streak,
+  });
+  if (missing) return pushScore(p);
+}
