@@ -44,8 +44,8 @@ than asking which you meant. 38 levels contain such a pair on purpose.
   same level costs double** — 20, 40, 80, 160 — starting over at 20 in the
   next level. See *The hint economy* below.
 - **Stars:** finishing earns 1, finishing without hints 2, and adding three
-  bonus words 3. The number of levels finished **without a hint** is shown on
-  the leaderboard.
+  bonus words 3. The number of levels finished **without a hint** is one of
+  the things the leaderboard can rank you by.
 - **Daily challenge:** one puzzle a day, the same for everyone, no server
   involved — the date seeds the level index. It pays coins **and a free
   hint**, plus one extra hint on every fifth consecutive day.
@@ -147,6 +147,7 @@ npm run test:data      # structural checks on levels.json, no browser
 npm run test:edge      # ten ways to break the game, in a real browser
 npm run test:pin       # the sign-in flow, against a stubbed database
 npm run test:hints     # the hint prices, free hints and the no-hint tally
+npm run test:board     # the leaderboard, the player card and the changelog
 npm run test:levels    # play all 240 levels to the end (~10 min)
 ```
 
@@ -175,6 +176,15 @@ actually in this game:
 resetting in the next, surviving a reload (otherwise reloading would be a
 discount), free hints from the daily spending no coins and no ladder step,
 and being short of coins opening the offer instead of a dead end.
+
+`tests/board.mjs` covers the leaderboard's metric chips, the per-player card,
+the changelog appearing exactly once, and — the part worth having — that a
+database where `docs/leaderboard-stats.sql` has not been run yet still
+receives scores. Sending arguments a stored function does not take makes
+PostgREST answer 404, the same answer as a database with no functions at all;
+mistaking one for the other would push every write down the direct-table path
+that PIN-locked names are not allowed to take, and their scores would stop
+saving silently. That has happened here once already.
 
 `tests/pin.mjs` covers the sign-in flow — locked names, wrong PINs, the hint
 appearing only after a mistake, a taken name being refused — and the name
@@ -206,6 +216,19 @@ npm test
 gains a rule, it strips the newly-banned words and relays *only* the affected
 levels, leaving everyone's saved progress in the other levels intact.
 
+## The leaderboard is one column wide
+
+Five numbers per row — levels, stars, bonus words, daily streak — meant that
+on a 360 px phone the names were cut to `Šá…`, `Ha…`, `Tý…`. A leaderboard
+you cannot read the names on is not a leaderboard, and the answer to "where
+does the sixth statistic go" is that it doesn't.
+
+So a row carries **one** number and the player picks which — 🏆 levels, ★
+stars, 🧠 levels without a hint, ⭐ bonus words — and tapping a row opens that
+player's full set of figures, the daily streak and coins included. Four
+metrics, not five: the daily streak is already on the button directly above
+the board, and it was the chip that pushed the row onto a third line.
+
 ## Leaderboard
 
 Scores go to a `leaderboard` table in Supabase (free tier). Identity is just
@@ -215,7 +238,16 @@ doesn't cost you your place. Every call has a timeout and falls back to local
 data, so the game stays playable when Supabase is asleep or unreachable.
 
 Table setup: [`docs/leaderboard.sql`](docs/leaderboard.sql), then
-[`docs/leaderboard-pin.sql`](docs/leaderboard-pin.sql).
+[`docs/leaderboard-pin.sql`](docs/leaderboard-pin.sql), then
+[`docs/leaderboard-stats.sql`](docs/leaderboard-stats.sql).
+
+Every migration has to leave the *old* clients working, because they are
+already installed on people's phones and a service worker can serve a stale
+build for a launch or two. Each new column is therefore optional on the way
+in and the client drops it after one refusal. `leaderboard-stats.sql` also
+stops the "keep the best" trigger applying to **coins**: coins are the one
+number that is supposed to go down, and while the trigger held them at their
+all-time high, signing in on a second phone refilled the purse.
 
 ### Locking a name
 
@@ -243,6 +275,13 @@ folded, separators dropped, digit-for-letter swaps undone, repeated letters
 collapsed) so `K0k0t` and `k.o.k.o.t` are caught along with the plain
 spelling. This runs in the browser, so it stops someone picking a rude name
 rather than someone determined to force one through.
+
+## Telling players what changed
+
+`NEWS` in `web/js/main.js` is a short changelog, newest first. A player has
+read up to `player.seenNews`, so adding an entry re-arms a dot on the trophy
+button and shows the card once on the next launch — but only to somebody who
+has played before. A newcomer gets the game, not its release notes.
 
 ## Licences
 

@@ -17,8 +17,12 @@ export function newPlayer(name, avatar) {
     bonusTotal: 0,
     freeHints: 0,       // hints earned from the daily challenge, cost nothing
     stars: {},          // levelIndex -> 1..3
+    clean: 0,           // levels finished without a hint, as the board knows
+    cleanBest: 0,       // …and the longest run of them (both are floors: the
+                        // real count is worked out from `stars` when it is higher)
     daily: null,        // { day, streak, best } for the daily challenge
     sawTip: false,
+    seenNews: null,     // id of the newest changelog entry this player has read
     pin: null,          // four digits, remembered on this device so it is
                         // typed once per device rather than once per session
     pinAsked: false,    // whether we have already offered to lock the name

@@ -30,8 +30,19 @@ let extendedSchema = true;
 // Until then the database still keys rows by (device_id, name), so the
 // client works either way instead of failing to sync.
 let nameIsKey = true;
+// `clean` / `clean_best` (levels finished without a hint) arrived later
+// still. Same rule: if the column is not there yet, sync everything else
+// rather than nothing. See docs/leaderboard-stats.sql.
+let cleanSchema = true;
 
-export async function pushScore({ deviceId, name, avatar, levels, bonus, coins, stars, streak }) {
+const COLS = () => [
+  'name,avatar,levels,bonus,coins',
+  extendedSchema ? ',stars,streak' : '',
+  cleanSchema ? ',clean,clean_best' : '',
+].join('');
+
+export async function pushScore({ deviceId, name, avatar, levels, bonus, coins,
+                                  stars, streak, clean, cleanBest }) {
   const base = {
     device_id: deviceId,
     name,
@@ -42,7 +53,9 @@ export async function pushScore({ deviceId, name, avatar, levels, bonus, coins, 
     updated_at: new Date().toISOString(),
   };
   const send = async (withExtras, byName) => {
-    const row = withExtras ? { ...base, stars, streak } : base;
+    const row = withExtras
+      ? { ...base, stars, streak, ...(cleanSchema ? { clean, clean_best: cleanBest } : {}) }
+      : base;
     return fetch(`${URL}?on_conflict=${byName ? 'name' : 'device_id,name'}`, {
       method: 'POST',
       headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates' },
@@ -56,6 +69,10 @@ export async function pushScore({ deviceId, name, avatar, levels, bonus, coins, 
     nameIsKey = false; // migration not applied yet
     res = await send(extendedSchema, false);
   }
+  if (!res.ok && cleanSchema && res.status === 400) {
+    cleanSchema = false;   // docs/leaderboard-stats.sql not applied yet
+    res = await send(extendedSchema, nameIsKey);
+  }
   if (!res.ok && extendedSchema && res.status === 400) {
     extendedSchema = false; // unknown column
     res = await send(false, nameIsKey);
@@ -65,31 +82,23 @@ export async function pushScore({ deviceId, name, avatar, levels, bonus, coins, 
 
 // Look a player up by name so a new device can continue their game.
 export async function fetchPlayer(name) {
-  const cols = extendedSchema
-    ? 'name,avatar,levels,bonus,coins,stars,streak'
-    : 'name,avatar,levels,bonus,coins';
-  const res = await fetch(`${URL}?select=${cols}&name=eq.${encodeURIComponent(name)}&limit=1`,
+  const ask = () => fetch(`${URL}?select=${COLS()}&name=eq.${encodeURIComponent(name)}&limit=1`,
     { headers: HEADERS, signal: timeoutSignal() });
+  let res = await ask();
+  if (!res.ok && cleanSchema && res.status === 400) { cleanSchema = false; res = await ask(); }
   if (!res.ok) throw new Error(`fetchPlayer ${res.status}`);
   const rows = await res.json();
   return rows[0] ?? null;
 }
 
 export async function fetchTop(limit = 100) {
-  const cols = extendedSchema
-    ? 'name,avatar,levels,bonus,coins,stars,streak,device_id'
-    : 'name,avatar,levels,bonus,coins,device_id';
-  let res = await fetch(
-    `${URL}?select=${cols}&order=levels.desc,bonus.desc,coins.desc&limit=${limit}`,
+  const ask = () => fetch(
+    `${URL}?select=${COLS()},device_id&order=levels.desc,bonus.desc,coins.desc&limit=${limit}`,
     { headers: HEADERS, signal: timeoutSignal() }
   );
-  if (!res.ok && extendedSchema && res.status === 400) {
-    extendedSchema = false;
-    res = await fetch(
-      `${URL}?select=name,avatar,levels,bonus,coins,device_id&order=levels.desc,bonus.desc,coins.desc&limit=${limit}`,
-      { headers: HEADERS, signal: timeoutSignal() }
-    );
-  }
+  let res = await ask();
+  if (!res.ok && cleanSchema && res.status === 400) { cleanSchema = false; res = await ask(); }
+  if (!res.ok && extendedSchema && res.status === 400) { extendedSchema = false; res = await ask(); }
   if (!res.ok) throw new Error(`fetchTop ${res.status}`);
   return res.json();
 }
@@ -155,10 +164,35 @@ export async function setPin(name, oldPin, newPin, hint) {
 // Score push that carries the PIN. Falls back to the direct table write
 // when the migration has not been run yet.
 export async function pushScorePin(p) {
-  const { missing } = await rpc('save_score', {
+  const args = {
     p_name: p.name, p_pin: p.pin ?? null, p_device: p.deviceId, p_avatar: p.avatar,
     p_levels: p.levels, p_bonus: p.bonus, p_coins: p.coins,
     p_stars: p.stars, p_streak: p.streak,
-  });
-  if (missing) return pushScore(p);
+  };
+  const withClean = cleanSchema;
+  if (withClean) { args.p_clean = p.clean ?? 0; args.p_clean_best = p.cleanBest ?? 0; }
+
+  // Sending two arguments the stored function does not take makes PostgREST
+  // answer "no such function" — a 404, the same answer as a database with no
+  // PIN functions at all. Telling those two apart matters: treating this one
+  // as "no functions here" would send every score down the direct-write path,
+  // which PIN-locked names are not allowed to take, and their scores would
+  // stop saving until the SQL was run. So retry the same call without the new
+  // arguments first, and only then conclude the functions are missing.
+  const call = async () => {
+    try {
+      return await rpc('save_score', args);
+    } catch (err) {
+      if (err.wrongPin || !withClean) throw err;
+      return { badArgs: true };
+    }
+  };
+  let out = await call();
+  if ((out.missing || out.badArgs) && withClean) {
+    cleanSchema = false;   // docs/leaderboard-stats.sql has not been run yet
+    delete args.p_clean;
+    delete args.p_clean_best;
+    out = await rpc('save_score', args);
+  }
+  if (out.missing) return pushScore(p);
 }

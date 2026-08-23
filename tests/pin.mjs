@@ -54,6 +54,11 @@ async function page(rows) {
   p.__ctx = ctx; return p;
 }
 const type = async (p, n) => { await p.fill('#np-name', n); await p.click('#np-go'); await p.waitForTimeout(1400); };
+// A returning player is shown what has changed since they last played, and
+// that card sits over the game until they acknowledge it.
+const closeNews = async p => {
+  if (await p.locator('#ov-back').count()) { await p.click('#ov-back'); await p.waitForTimeout(500); }
+};
 
 // 1. free name just works
 { const p = await page({}); await type(p,'Nováček'); await p.waitForTimeout(6000);
@@ -133,6 +138,7 @@ const type = async (p, n) => { await p.fill('#np-name', n); await p.click('#np-g
   await p.reload({ waitUntil:'domcontentloaded' });
   await p.waitForFunction(()=>window.__slovotoc?.state().player, null, {timeout:25000}).catch(()=>{});
   await p.waitForTimeout(2500);
+  await closeNews(p);
   await p.click('#btn-player'); await p.waitForTimeout(2500);
   const names = await p.evaluate(()=>[...document.querySelectorAll('#board-box .board-row b')].map(e=>e.innerText.trim()));
   const hanas = names.filter(n=>/Hana/.test(n)).length;
