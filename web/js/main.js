@@ -833,9 +833,13 @@ function localRows() {
 // The server copy can lag behind (a push may still be in flight, or have
 // failed offline), so this device's own players always win over server rows.
 function mergeLocal(rows) {
+  // Identity is the name, so that is what deduplicates. Matching on device
+  // instead showed a player twice on their own screen the moment their board
+  // row had been written from a different device — moving from the Messenger
+  // browser to the installed app is enough, because each keeps its own id.
   const local = localRows();
-  const isLocal = r => r.device_id === root.deviceId;
-  return [...rows.filter(r => !isLocal(r) || !local.some(l => l.name === r.name)), ...local];
+  const mine = new Set(local.map(l => l.name));
+  return [...rows.filter(r => !mine.has(r.name)), ...local];
 }
 
 function renderBoard(rows, note) {
@@ -848,7 +852,7 @@ function renderBoard(rows, note) {
     <div class="board">
       <div class="board-row board-head"><i></i><b>Hráč</b><span>Úrovně</span><span>★</span><span>⭐</span><span>🔥</span></div>
       ${sorted.map((r, i) => `
-        <div class="board-row ${r.device_id === root.deviceId && r.name === player?.name ? 'me' : ''}">
+        <div class="board-row ${r.name === player?.name ? 'me' : ''}">
           <i>${medals[i] ?? i + 1 + '.'}</i>
           <b>${safeAvatar(r.avatar)} ${esc(r.name)}</b>
           <span>${r.levels}</span><span>${r.stars ?? 0}</span><span>${r.bonus}</span><span>${r.streak ?? 0}</span>

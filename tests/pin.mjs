@@ -120,6 +120,27 @@ const type = async (p, n) => { await p.fill('#np-name', n); await p.click('#np-g
   rec('běžné jméno projde', await p.evaluate(()=>window.__slovotoc?.state().player)==='Bára');
   await p.__ctx.close(); }
 
+// 7. A board row written from another device must not show the player twice.
+// Moving from the Messenger browser to the installed app is enough to make
+// the ids differ, and that used to duplicate the row on their own screen.
+{ const p = await page({ 'Hana': { levels: 29, avatar: '🐬', bonus: 444, coins: 1400, stars: 75 } });
+  await p.evaluate(() => {
+    const mk = (name, lvl) => ({ name, avatar:'🐬', coins:1400, levelIndex:lvl, best:lvl, bonusTotal:444,
+      stars:{}, daily:null, sawTip:true, pin:null, pinAsked:true, cur:null, createdAt:Date.now(), lastPlayed:Date.now() });
+    localStorage.setItem('slovotoc-v2', JSON.stringify({ v:2, sound:true, active:'Hana',
+      deviceId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', sawInApp:true, players:{ 'Hana': mk('Hana',29) } }));
+  });
+  await p.reload({ waitUntil:'domcontentloaded' });
+  await p.waitForFunction(()=>window.__slovotoc?.state().player, null, {timeout:25000}).catch(()=>{});
+  await p.waitForTimeout(2500);
+  await p.click('#btn-player'); await p.waitForTimeout(2500);
+  const names = await p.evaluate(()=>[...document.querySelectorAll('#board-box .board-row b')].map(e=>e.innerText.trim()));
+  const hanas = names.filter(n=>/Hana/.test(n)).length;
+  const highlighted = await p.evaluate(()=>document.querySelector('#board-box .board-row.me b')?.innerText.trim() ?? '');
+  rec('hráč se na žebříčku neobjeví dvakrát', hanas === 1, `Hana ${hanas}x, řádky: ${names.join(', ')}`);
+  rec('vlastní řádek je zvýrazněný', /Hana/.test(highlighted), highlighted);
+  await p.__ctx.close(); }
+
 console.log('\n' + out.filter(x=>!x.ok).length + ' selhalo z ' + out.length);
 await b.close(); stop();
 process.exit(out.some(x=>!x.ok) ? 1 : 0);
