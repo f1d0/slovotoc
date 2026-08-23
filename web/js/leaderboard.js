@@ -103,6 +103,35 @@ export async function fetchTop(limit = 100) {
   return res.json();
 }
 
+// ------------------------------------------------------------ hlášení slov
+// A report used to open a GitHub issue, which works for exactly one person
+// and not for any of the children playing. It goes to the database instead.
+// Reporting is a courtesy, never a blocker: if it fails, the player is told
+// once and the game carries on.
+const REPORTS = URL.replace(/\/leaderboard$/, '/word_reports');
+
+export async function reportWord({ word, kind, level, player, deviceId }) {
+  const res = await fetch(`${REPORTS}?on_conflict=word,kind,device_id`, {
+    method: 'POST',
+    // ignore-duplicates: reporting the same word twice from one phone is not
+    // a new report, and must not come back as an error either
+    headers: { ...HEADERS, Prefer: 'resolution=ignore-duplicates,return=minimal' },
+    body: JSON.stringify([{ word, kind, level, player, device_id: deviceId }]),
+    signal: timeoutSignal(),
+  });
+  if (!res.ok) throw new Error(`reportWord ${res.status}`);
+}
+
+// Used by tools/reports.mjs. The public key can read the report itself but
+// not who sent it — see docs/word-reports.sql.
+export async function fetchReports(status = 'new') {
+  const res = await fetch(
+    `${REPORTS}?select=id,created_at,word,kind,level,status&status=eq.${status}&order=created_at.desc&limit=200`,
+    { headers: HEADERS, signal: timeoutSignal() });
+  if (!res.ok) throw new Error(`fetchReports ${res.status}`);
+  return res.json();
+}
+
 // ---------------------------------------------------------------- PIN
 // A name can be locked with a four-digit PIN. The PIN is verified in the
 // database, never here — see docs/leaderboard-pin.sql for why. These calls

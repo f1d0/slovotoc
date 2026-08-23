@@ -3,7 +3,7 @@
 import { loadRoot, saveRoot, newPlayer, claimLegacy, AVATARS } from './state.js';
 import {
   pushScore, pushScorePin, fetchTop, fetchPlayer,
-  nameStatus, signIn, setPin, pinSupported,
+  nameStatus, signIn, setPin, pinSupported, reportWord,
 } from './leaderboard.js';
 import { nameProblem } from './wordfilter.js';
 import { Wheel, UC } from './wheel.js';
@@ -515,35 +515,48 @@ function reportText(word, accepted) {
 function showReport() {
   if (!lastWord) return;
   const w = UC(lastWord);
-  const issueTitle = encodeURIComponent(`Hlášení slova: ${w}`);
-  const bodyAccepted = encodeURIComponent(reportText(lastWord, true));
-  const bodyRejected = encodeURIComponent(reportText(lastWord, false));
-  const wrongUrl = `${REPO_URL}/issues/new?title=${issueTitle}&body=${bodyAccepted}`;
-  const missingUrl = `${REPO_URL}/issues/new?title=${issueTitle}&body=${bodyRejected}`;
+  const kind = lastWordAccepted ? 'wrong' : 'missing';
   showOverlay(`
     <h2>⚑ Nahlásit slovo</h2>
     <p style="font-size:24px;font-weight:900;letter-spacing:0.05em">${esc(w)}</p>
-    <p>Co je s ním špatně?</p>
-    <button class="big-btn" id="rep-wrong">${lastWordAccepted ? 'Tohle není správné slovo' : 'Slovo mělo být uznáno'}</button>
-    <button class="ghost-btn" id="rep-copy">📋 Zkopírovat hlášení</button>
+    <p>${lastWordAccepted
+      ? 'Tohle slovo podle tebe do hry nepatří?'
+      : 'Tohle slovo měla hra podle tebe uznat?'}</p>
+    <button class="big-btn" id="rep-send">${lastWordAccepted
+      ? 'Ano, tohle není slovo' : 'Ano, mělo být uznáno'}</button>
     <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
-    <p style="font-size:12px;opacity:0.7">Hlášení se otevře jako GitHub issue – stačí potvrdit. Bez GitHub účtu použij kopírování a pošli text autorovi.</p>
-  `);
-  $('#rep-wrong').onclick = () => {
-    window.open(lastWordAccepted ? wrongUrl : missingUrl, '_blank', 'noopener');
-    hideOverlay();
-    toast('Díky za hlášení! 🙏');
-  };
-  $('#rep-copy').onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(reportText(lastWord, lastWordAccepted));
-      toast('Zkopírováno 📋');
-    } catch {
-      toast('Kopírování se nepovedlo 🙁');
-    }
-    hideOverlay();
-  };
+    <p style="font-size:12px;opacity:0.7">Hlášení se pošle rovnou autorovi hry.
+      Nic víc dělat nemusíš — slovo se buď doplní, nebo vyřadí.</p>
+  `, hideOverlay);
   $('#ov-close').onclick = hideOverlay;
+  $('#rep-send').onclick = async () => {
+    const btn = $('#rep-send');
+    btn.disabled = true;
+    btn.textContent = 'Posílám…';
+    try {
+      await reportWord({
+        word: lastWord,
+        kind,
+        level: player ? player.levelIndex : null,
+        player: player?.name ?? null,
+        deviceId: root.deviceId,
+      });
+      hideOverlay();
+      toast('Díky za hlášení! 🙏 Podívám se na to.', 3000);
+    } catch {
+      // Offline, or the table is not there yet. Do not lose the report:
+      // hand it to them as text they can send however they like.
+      btn.disabled = false;
+      btn.textContent = 'Zkusit znovu';
+      const line = reportText(lastWord, lastWordAccepted);
+      try {
+        await navigator.clipboard.writeText(line);
+        toast('Odeslání se nepovedlo — hlášení máš ve schránce 📋', 4000);
+      } catch {
+        toast('Odeslání se nepovedlo, zkus to prosím později 🙁', 3500);
+      }
+    }
+  };
 }
 
 // ---------- hints ----------
@@ -748,6 +761,7 @@ const NEWS = [
       '🏆 <b>Žebříček se dá přepínat</b> podle toho, co tě zajímá, a po klepnutí na hráče uvidíš všechna jeho čísla.',
       '🔒 <b>Jméno si můžeš zamknout PINem</b>, aby za tebe nikdo nehrál. Funguje na jakémkoliv telefonu, nic se neváže na jedno zařízení.',
       '📖 <b>Hra uznává víc českých tvarů</b> (zelné, ose a spousta dalších).',
+      '⚑ <b>Nesedí ti nějaké slovo?</b> Tlačítkem vedle slova ho nahlásíš jedním klepnutím — hlášení přijde rovnou mně a slovo doplním. Takhle přibyly lokše a kolec.',
     ],
   },
   {
@@ -1182,8 +1196,11 @@ async function showAbout() {
     <p><b>Slovotoč</b> je nekomerční hra pro kamarády — bez reklam, bez účtů
        a bez sledování. Inspirováno hrou Words of Wonders.</p>
     <p style="font-size:13px">Slova pocházejí z českých slovníků
-       (Wikislovník, hunspell cs_CZ). Našel jsi chybné slovo? Použij
-       tlačítko ⚑ vedle slova.</p>
+       (Wikislovník, hunspell cs_CZ). Našel jsi chybné slovo, nebo hra
+       neuznala slovo, které znáš? Použij tlačítko ⚑ vedle slova — hlášení
+       přijde rovnou mně a slovo doplním.</p>
+    <p style="font-size:12px;opacity:0.7">Hra je open source:
+       <a href="${REPO_URL}" target="_blank" rel="noopener">github.com/f1d0/slovotoc</a></p>
     <button class="ghost-btn" id="ov-rules">❓ Jak se hraje</button>
     <h2 style="margin-top:16px;font-size:17px">📷 Fotografie míst</h2>
     <div id="credits-box"><p style="opacity:0.7">Načítám…</p></div>
