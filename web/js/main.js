@@ -970,6 +970,7 @@ function startAs(name, { recover = true } = {}) {
     loadLevel(true);
   }
   updateDailyBadge();
+  maybeWarnInApp();
   // reload the level once progress has been pulled from the shared board
   if (recover) {
     recoverIfEmpty(name).then(found => {
@@ -1098,7 +1099,7 @@ function showRules(back) {
 
 // Copies a player's progress from the shared board onto this device, so the
 // same person can carry on from a different phone or browser.
-function adoptPlayer(row, pin = null) {
+function adoptPlayer(row, pin = null, offerPin = false) {
   const p = newPlayer(row.name, cleanAvatar(row.avatar));
   p.pin = pin;                 // remembered so it is typed once per device
   p.pinAsked = pin != null;
@@ -1111,6 +1112,7 @@ function adoptPlayer(row, pin = null) {
   root.players[row.name] = p;
   saveRoot(root);
   startAs(row.name, { recover: false });
+  if (offerPin) setTimeout(() => showSetPin({ nudge: true, back: hideOverlay }), 1200);
   toast(`Vítej zpátky, ${row.name}! Pokračuješ na úrovni ${p.levelIndex + 1}.`, 3000);
 }
 
@@ -1138,6 +1140,56 @@ async function fillRemotePlayers() {
   } catch {
     box.innerHTML = '';
   }
+}
+
+// ---------- in-app browsers ----------
+
+// Facebook, Messenger and Instagram open links in their own browser, which
+// keeps its own storage. Progress made there is invisible to Safari, to
+// Chrome and to the installed app — which has now cost two players their
+// afternoon. The game cannot bridge that; it can only say so.
+const IN_APP = /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|MicroMessenger/i
+  .test(navigator.userAgent);
+
+function showInAppWarning(back) {
+  const android = /Android/i.test(navigator.userAgent);
+  showOverlay(`
+    <h2>📱 Hraješ v prohlížeči Messengeru</h2>
+    <p>Tenhle prohlížeč si drží <b>vlastní paměť</b>, oddělenou od Safari,
+       Chromu i od hry přidané na plochu. Co tady odehraješ, se ti jinde
+       samo neukáže.</p>
+    <p class="hint-note">O postup nepřijdeš — ukládá se pod tvým jménem na
+       společný žebříček. Ale pokaždé, když přejdeš jinam, ho musíš zase
+       vytáhnout přes jméno.</p>
+    <h3 class="sub-h">Lepší je otevřít hru napřímo</h3>
+    <ul class="rules-list">
+      <li><em>${android ? '⋮' : '⋯'}</em><div>
+        <b>Otevřít v prohlížeči</b>
+        <span>Nahoře ${android ? 'tři tečky' : 'tlačítko ⋯'} → <b>Otevřít
+        v ${android ? 'Chromu' : 'Safari'}</b>. Pak už jsi v normálním prohlížeči.</span></div></li>
+      <li><em>📲</em><div><b>A pak si hru přidej na plochu</b>
+        <span>Otevře se na celou obrazovku, funguje i bez internetu a postup
+        zůstává na jednom místě.</span></div></li>
+    </ul>
+    <button class="big-btn" id="ia-copy">📋 Zkopírovat odkaz na hru</button>
+    <button class="ghost-btn" id="ia-ok">Rozumím, hraju dál tady</button>
+  `);
+  $('#ia-copy').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText('https://slovotoc.cz');
+      toast('Odkaz zkopírován — vlož ho do Safari nebo Chromu 📋', 3200);
+    } catch { toast('Zkopíruj prosím ručně: slovotoc.cz', 3200); }
+  };
+  $('#ia-ok').onclick = back;
+}
+
+// Once per device, and never when the game is already running standalone.
+function maybeWarnInApp() {
+  if (!IN_APP || isInstalled() || root.sawInApp) return false;
+  root.sawInApp = true;
+  saveRoot(root);
+  showInAppWarning(hideOverlay);
+  return true;
 }
 
 // ---------- locking your own name ----------
@@ -1305,7 +1357,7 @@ function askIsItYou(name, status, back) {
   $('#iy-yes').onclick = async () => {
     let row = null;
     try { row = await fetchPlayer(name); } catch { /* offline */ }
-    if (row) adoptPlayer(row);
+    if (row) adoptPlayer(row, null, true);   // offer the lock straight away
     else createPlayer(name);
   };
 }

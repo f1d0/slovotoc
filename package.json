@@ -7,13 +7,14 @@
   "homepage": "https://slovotoc.cz",
   "license": "MIT",
   "scripts": {
-    "test": "node tests/data.mjs && node tests/edge.mjs && node tests/pin.mjs",
+    "test": "node tests/data.mjs && node tests/edge.mjs && node tests/pin.mjs && node tests/inapp.mjs",
     "test:data": "node tests/data.mjs",
     "test:edge": "node tests/edge.mjs",
     "levels": "node tools/generate-levels.mjs",
     "backgrounds": "node tools/fetch-backgrounds.mjs",
     "test:levels": "node tests/all-levels.mjs",
-    "test:pin": "node tests/pin.mjs"
+    "test:pin": "node tests/pin.mjs",
+    "test:inapp": "node tests/inapp.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.49.0"
