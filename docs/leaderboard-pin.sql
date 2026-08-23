@@ -161,3 +161,29 @@ grant execute on function public.set_pin(text, text, text, text) to anon;
 -- Zapomenutý PIN se resetuje ručně tady v editoru:
 --   update public.leaderboard set pin_hash = null, pin_hint = null,
 --          pin_fails = 0, pin_blocked_until = null where name = 'Jméno';
+
+-- ============================================================ DODATEK
+-- Revokace výše rozbila ukládání všem, kdo měli v mezipaměti starší verzi
+-- hry: ta umí jen přímý zápis do tabulky a začala dostávat 401. Hráli dál
+-- a jejich postup nikam nedorazil.
+--
+-- Přímý zápis se proto vrací, ale jen tam, kde nikomu neublíží: na řádky,
+-- které PIN nemají. Zamčené jméno zůstává přístupné výhradně přes
+-- save_score() s platným PINem. A výčet sloupců zajistí, že se otisku PINu
+-- nedotkne ani ten přímý zápis – zamknout či odemknout jméno jde pořád
+-- pouze přes set_pin().
+
+grant insert (device_id, name, avatar, levels, bonus, coins, stars, streak, updated_at)
+  on public.leaderboard to anon;
+grant update (device_id, name, avatar, levels, bonus, coins, stars, streak, updated_at)
+  on public.leaderboard to anon;
+
+drop policy if exists "legacy insert" on public.leaderboard;
+create policy "legacy insert" on public.leaderboard
+  for insert to anon with check (true);
+
+drop policy if exists "legacy update unlocked" on public.leaderboard;
+create policy "legacy update unlocked" on public.leaderboard
+  for update to anon
+  using (pin_hash is null)
+  with check (pin_hash is null);
