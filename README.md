@@ -39,13 +39,52 @@ than asking which you meant. 38 levels contain such a pair on purpose.
 - A word in the crossword flies into the grid. A valid Czech word that
   *isn't* in the crossword counts as a **bonus word** (⭐) — every 10 pay out
   coins.
-- **💡 25 coins** reveals a random letter, **🔨 60 coins** a square you pick.
+- **💡 reveals a random letter, 🔨 a square you pick** (twice the price).
+  The first hint in a level costs 20 coins and **every further hint in the
+  same level costs double** — 20, 40, 80, 160 — starting over at 20 in the
+  next level. See *The hint economy* below.
 - **Stars:** finishing earns 1, finishing without hints 2, and adding three
-  bonus words 3.
+  bonus words 3. The number of levels finished **without a hint** is shown on
+  the leaderboard.
 - **Daily challenge:** one puzzle a day, the same for everyone, no server
-  involved — the date seeds the level index.
+  involved — the date seeds the level index. It pays coins **and a free
+  hint**, plus one extra hint on every fifth consecutive day.
 - Progress lives in `localStorage`; several people can share one device, each
   under their own name.
+
+## The hint economy
+
+Hints were a flat 25 coins, and that quietly broke the game. Coins accumulate
+without limit — mostly from bonus words, which are worth 15 coins per 10 and
+of which one level can hold 707 — so the best player on the board had 3805
+coins, enough to *buy five entire crosswords*. Meanwhile a beginner with 80
+starting coins found the very first hint expensive.
+
+The price now doubles with every hint bought **within one level** and resets
+in the next:
+
+| hint | 💡 | 🔨 |
+|---|---|---|
+| 1st | 20 | 40 |
+| 2nd | 40 | 80 |
+| 3rd | 80 | 160 |
+| 4th | 160 | 320 |
+| 5th | 320 | 640 |
+| 6th | 640 | 1280 |
+
+There is no ceiling — a ceiling is what a large purse buys its way through.
+Both ends improve. The first hint of any level is cheaper than it used to be,
+so being stuck is never unaffordable; buying a whole crossword is arithmetic
+nobody can pay — that same 3805-coin purse now buys 7 letters of a 33-cell
+grid instead of five finished levels.
+
+A player who still cannot pay is not left with "not enough coins": they are
+offered the daily challenge, which pays 40 coins **and a hint that costs
+nothing** (green bulb), and told how many bonus words separate them from the
+next payout.
+
+Nothing is for sale for money, and nothing here is a currency sink for its
+own sake — the point is that spending a hint should be a decision.
 
 ## How it fits together
 
@@ -107,6 +146,7 @@ while developing.
 npm run test:data      # structural checks on levels.json, no browser
 npm run test:edge      # ten ways to break the game, in a real browser
 npm run test:pin       # the sign-in flow, against a stubbed database
+npm run test:hints     # the hint prices, free hints and the no-hint tally
 npm run test:levels    # play all 240 levels to the end (~10 min)
 ```
 
@@ -130,6 +170,11 @@ actually in this game:
 | the same word submitted twice | counted twice |
 | no canvas, no audio | confetti threw and took the level-advance timer with it |
 | a save captured mid-completion | reopened to a full crossword that never finished |
+
+`tests/hints.mjs` covers the hint economy: prices doubling inside a level,
+resetting in the next, surviving a reload (otherwise reloading would be a
+discount), free hints from the daily spending no coins and no ladder step,
+and being short of coins opening the offer instead of a dead end.
 
 `tests/pin.mjs` covers the sign-in flow — locked names, wrong PINs, the hint
 appearing only after a mistake, a taken name being refused — and the name

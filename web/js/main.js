@@ -14,8 +14,17 @@ import {
   sndReveal, sndCoin, sndFanfare,
 } from './audio.js';
 
-const BULB_COST = 25;
-const HAMMER_COST = 60;
+// Hints get more expensive with every one bought in the same level, and the
+// price starts over in the next one. Flat prices meant a player with a few
+// thousand coins could simply buy whole crosswords — 3805 coins was five
+// finished levels — while the very first hint was still dear for a beginner.
+// Doubling fixes both ends: the first hint of a level is cheaper than it used
+// to be, the sixth is out of reach for anyone.
+const HINT_BASE = 20;            // first hint of a level
+const HINT_GROWTH = 2;           // …and each further one in the same level
+const HAMMER_MULT = 2;           // choosing the square costs twice the bulb
+const DAILY_FREE_HINTS = 1;      // free hints for finishing the daily
+const DAILY_STREAK_BONUS = 5;    // …plus one more on every Nth day in a row
 const LEVEL_REWARD_BASE = 10;
 const LEVEL_REWARD_PER_WORD = 2;
 const BONUS_MILESTONE = 10;      // every N bonus words…
@@ -59,7 +68,9 @@ const els = {
   rope: $('#rope-svg'),
   shuffle: $('#btn-shuffle'),
   bulb: $('#btn-bulb'),
+  bulbCost: $('#btn-bulb .cost i'),
   hammer: $('#btn-hammer'),
+  hammerCost: $('#btn-hammer .cost i'),
   jar: $('#btn-jar'),
   bonusCount: $('#bonus-count'),
   sound: $('#btn-sound'),
@@ -92,6 +103,7 @@ let curPack = null;         // pack the current level belongs to
 let levelIdx = 0;           // index of the level on screen (differs in daily mode)
 let dailyMode = false;      // playing the daily challenge, not the campaign
 let usedHint = false;       // any hint used on the current level (star rule)
+let hintsBought = 0;        // hints paid for in this level – sets the price
 let lastWord = '';          // last submitted word (for reporting)
 let lastWordAccepted = false;
 let reportTimer = null;
@@ -117,9 +129,37 @@ function setCoins(n, bump = false) {
   updateToolButtons();
 }
 
+// ---------- hint prices ----------
+
+// The nth hint of a level costs double the one before it, with no ceiling:
+// a ceiling is exactly what let a large purse buy a crossword. In practice
+// the sixth hint (640) already ends the conversation. Free hints from the
+// daily do not move the ladder — they are a gift, not a purchase.
+function hintStep(n = hintsBought) {
+  return HINT_BASE * HINT_GROWTH ** n;
+}
+const bulbCost = () => hintStep();
+const hammerCost = () => hintStep() * HAMMER_MULT;
+const freeHints = () => player?.freeHints ?? 0;
+// Nobody will get here, but a price badge must never grow wider than its
+// button: past four figures it reads as thousands.
+const price = n => (n >= 10000 ? `${Math.round(n / 1000)}k` : String(n));
+
 function updateToolButtons() {
-  els.bulb.classList.toggle('disabled', player.coins < BULB_COST);
-  els.hammer.classList.toggle('disabled', player.coins < HAMMER_COST && !hammerArmed);
+  if (!player) return;
+  const free = freeHints() > 0;
+  const bulb = bulbCost();
+  const hammer = hammerCost();
+  const spare = freeHints();
+  els.bulbCost.textContent = free ? (spare > 1 ? `zdarma ${spare}×` : 'zdarma') : price(bulb);
+  els.hammerCost.textContent = price(hammer);
+  els.bulb.classList.toggle('free', free);
+  els.bulb.classList.toggle('disabled', !free && player.coins < bulb);
+  els.hammer.classList.toggle('disabled', player.coins < hammer && !hammerArmed);
+  els.bulb.setAttribute('aria-label', free
+    ? 'Nápověda zdarma – odkrýt náhodné písmeno'
+    : `Nápověda za ${bulb} mincí – odkrýt náhodné písmeno`);
+  els.hammer.setAttribute('aria-label', `Nápověda za ${hammer} mincí – vyber políčko`);
 }
 
 // Tells the player how much of the crossword is actually left, so a streak
@@ -173,6 +213,7 @@ function persist() {
     found: [...found],
     hinted: [...hinted],
     bonus: [...foundBonus],
+    hints: hintsBought,   // reloading must not reset the price ladder
   };
   saveRoot(root);
 }
@@ -262,6 +303,7 @@ function loadLevel(restore = false, opts = {}) {
   level = LEVELS[levelIdx];
   curPack = pack;
   usedHint = false;
+  hintsBought = 0;   // the price starts over in every level
   applyTheme(packIdx, pack);
 
   els.packName.textContent = dailyMode ? '📅 Denní výzva' : pack.name;
@@ -294,6 +336,10 @@ function loadLevel(restore = false, opts = {}) {
       grid.reveal(k, { hinted: true, silent: true });
     }
     for (const b of player.cur.bonus) foundBonus.add(b);
+    // Older saves predate the counter; every hint reveals exactly one cell,
+    // so the revealed hints are a safe lower bound for what was paid for.
+    hintsBought = player.cur.hints ?? player.cur.hinted.length;
+    usedHint = hinted.size > 0;
   }
 
   els.bonusCount.textContent = foundBonus.size;
@@ -517,18 +563,27 @@ function hintReveal(k) {
 
 function useBulb() {
   if (busy || hammerArmed) return;
-  if (player.coins < BULB_COST) { toast('Nedostatek mincí 🙁'); return; }
   const keys = grid.unrevealedKeys();
   if (!keys.length) return;
+  const free = freeHints() > 0;
+  const cost = bulbCost();
+  if (!free && player.coins < cost) return offerHintTopUp(cost);
   usedHint = true;
-  setCoins(player.coins - BULB_COST);
+  if (free) {
+    player.freeHints -= 1;
+    toast('Nápověda zdarma z denní výzvy 🎁');
+    updateToolButtons();
+  } else {
+    hintsBought += 1;
+    setCoins(player.coins - cost);
+  }
   const k = keys[Math.floor(Math.random() * keys.length)];
   hintReveal(k);
 }
 
 function toggleHammer() {
   if (busy) return;
-  if (!hammerArmed && player.coins < HAMMER_COST) { toast('Nedostatek mincí 🙁'); return; }
+  if (!hammerArmed && player.coins < hammerCost()) return offerHintTopUp(hammerCost());
   hammerArmed = !hammerArmed;
   els.hammer.classList.toggle('armed', hammerArmed);
   grid.setPickMode(hammerArmed);
@@ -543,9 +598,47 @@ els.grid.addEventListener('click', e => {
   els.hammer.classList.remove('armed');
   grid.setPickMode(false);
   usedHint = true;
-  setCoins(player.coins - HAMMER_COST);
+  const cost = hammerCost();
+  hintsBought += 1;
+  setCoins(player.coins - cost);
   hintReveal(cell.dataset.k);
 });
+
+// A player who cannot afford a hint used to get "Nedostatek mincí 🙁" and
+// nothing else — a dead end. Say where the coins come from instead, and hand
+// them the daily challenge, which pays both coins and a free hint.
+function offerHintTopUp(cost) {
+  const dailyOpen = !dailyMode && !dailyDone();
+  const toMilestone = BONUS_MILESTONE - (player.bonusTotal % BONUS_MILESTONE);
+  // Being turned away from the hammer while the bulb is still within reach is
+  // the commonest case, and the least worth an overlay of bad news.
+  const bulbInstead = cost > bulbCost() &&
+    (freeHints() > 0 || player.coins >= bulbCost());
+  showOverlay(`
+    <h2>💡 Na nápovědu ti nestačí mince</h2>
+    <p>Tady stojí <b>${cost}</b> ${coinSvg()}, ty máš <b>${player.coins}</b>.</p>
+    ${bulbInstead
+      ? `<p class="fact">💡 Na žárovku ti ale stačí — odkryje náhodné písmeno
+           ${freeHints() > 0 ? 'a jednu máš zdarma 🎁' : `za ${bulbCost()} mincí`}.</p>`
+      : ''}
+    ${dailyOpen
+      ? `<button class="daily-btn" id="ov-daily"><em>📅</em>
+           <div><b>Zkus denní výzvu</b><span>+${DAILY_REWARD} mincí a nápověda zdarma 🎁</span></div>
+         </button>`
+      : `<p class="fact">📅 Denní výzvu už máš dnes hotovou — zítra bude nová,
+           s dalšími mincemi a nápovědou zdarma.</p>`}
+    <p class="fact">⭐ Ještě <b>${toMilestone}</b> ${toMilestone === 1 ? 'bonusové slovo' :
+        toMilestone < 5 ? 'bonusová slova' : 'bonusových slov'} a máš
+      +${BONUS_MILESTONE_COINS} mincí. Bonusové slovo je jakékoliv české slovo
+      z písmen v kole, i když není v křížovce.</p>
+    <p style="font-size:12.5px;opacity:0.75">Každá další nápověda v jednom kole
+      stojí dvojnásobek. V dalším kole cena začíná znovu na ${HINT_BASE}.</p>
+    <button class="big-btn" id="ov-close">Zkusím to sám</button>
+  `);
+  $('#ov-close').onclick = hideOverlay;
+  const d = $('#ov-daily');
+  if (d) d.onclick = () => { hideOverlay(); startDaily(); };
+}
 
 // ---------- overlays ----------
 
@@ -607,14 +700,21 @@ function finishDaily() {
     day: todayKey(),
     streak: continued ? (d.streak ?? 0) + 1 : 1,
   };
+  const s = player.daily.streak;
+  // The daily is where a stuck player gets unstuck: it pays a hint they do
+  // not have to afford, and a streak worth keeping pays one more.
+  const gift = DAILY_FREE_HINTS + (s % DAILY_STREAK_BONUS === 0 ? 1 : 0);
+  player.freeHints = freeHints() + gift;
   setCoins(player.coins + DAILY_REWARD, true);
   saveRoot(root);
   syncScore(true);
-  const s = player.daily.streak;
   showOverlay(`
     <h1>📅 Denní výzva hotová!</h1>
     <p>Dnešní hádanku máš za sebou.</p>
-    <div class="reward">+${DAILY_REWARD} ${coinSvg()}</div>
+    <div class="reward">+${DAILY_REWARD} ${coinSvg()} &nbsp; +${gift} 💡</div>
+    <p style="font-size:13px">${gift > 1 ? 'Za sérii máš nápovědu navíc! ' : ''}Nápovědy
+      zdarma máš teď <b>${freeHints()}</b> — použiješ je žárovkou 💡 kdykoliv,
+      zadarmo a v jakékoliv úrovni.</p>
     <p class="fact">🔥 Série: <b>${s} ${s === 1 ? 'den' : s < 5 ? 'dny' : 'dní'}</b> v řadě${
       !continued && d.day ? ' — předchozí série se přerušila' : ''}</p>
     <button class="big-btn" id="ov-back">Zpět do hry</button>
@@ -659,6 +759,45 @@ function totalStars(p) {
   return Object.values(p.stars ?? {}).reduce((a, b) => a + b, 0);
 }
 
+// A level finished without a hint is exactly a level worth two stars or
+// more, so this reads straight out of the stars that were already being
+// stored — everybody's count is right from the day it appears, with no
+// migration and nothing to backfill.
+function cleanLevels(p) {
+  return Object.values(p.stars ?? {}).filter(n => n >= 2).length;
+}
+
+// Longest run of consecutive levels done without a hint, plus the run the
+// player is on right now. Replaying a level can only raise its stars, so a
+// streak once earned is never taken away.
+function cleanStreak(p) {
+  const st = p.stars ?? {};
+  const top = Math.min(p.levelIndex ?? 0, LEVELS.length);
+  let best = 0, run = 0;
+  for (let i = 0; i < top; i++) {
+    if ((st[i] ?? 0) >= 2) { run += 1; if (run > best) best = run; } else run = 0;
+  }
+  return { best, now: run };
+}
+
+// Said only when it adds something: repeating "longest run 5" as "on a run of
+// 5" is noise, but being on the longest run you have ever had is not.
+function streakBrag(p) {
+  const { best, now } = cleanStreak(p);
+  if (now < 2) return '';
+  return now >= best
+    ? ' · právě jedeš svoji nejdelší sérii 🔥'
+    : ` · právě jedeš <b>${now}</b> v řadě 🔥`;
+}
+
+function cleanLine(p) {
+  const n = cleanLevels(p);
+  if (!n) return '';
+  const { best } = cleanStreak(p);
+  return `🧠 Bez nápovědy: <b>${n}</b> ${n === 1 ? 'kolo' : n < 5 ? 'kola' : 'kol'}` +
+    (best > 1 ? ` · nejdelší série <b>${best}</b>` : '');
+}
+
 // Fanfare and confetti are garnish. A player once sat on a completed level
 // that would not finish, because the confetti canvas refused a 2D context and
 // the exception took the level-advance timer down with it. Nothing decorative
@@ -679,6 +818,7 @@ function showAllDone() {
     <p>${esc(player.name)}, dokončil jsi všech ${LEVELS.length} úrovní Slovotoče!</p>
     <div class="reward">${coinSvg()} ${player.coins}</div>
     <p>Celkem bonusových slov: <b>${player.bonusTotal}</b></p>
+    ${cleanLine(player) ? `<p class="fact">${cleanLine(player)}</p>` : ''}
     <button class="big-btn" id="ov-board">🏆 Žebříček</button>
     <button class="ghost-btn" id="ov-restart">Hrát znovu od začátku</button>
   `);
@@ -746,6 +886,7 @@ function levelComplete() {
         : `<h1>Výborně!</h1><p>Úroveň ${player.levelIndex} je hotová.</p>`}
       ${starRow(stars)}
       <p style="font-size:12.5px;opacity:0.8">${starHint(stars)}</p>
+      ${stars >= 2 ? `<p class="fact">${cleanLine(player)}${streakBrag(player)}</p>` : ''}
       <div class="reward">+${reward} ${coinSvg()}</div>
       <button class="big-btn" id="ov-next">Další úroveň</button>
     `);
@@ -870,8 +1011,9 @@ async function showLeaderboard() {
       <em>📅</em>
       <div><b>Denní výzva</b><span>${done
         ? `Dnes hotovo ✓ · série 🔥 ${player.daily?.streak ?? 0}`
-        : 'Stejná hádanka pro všechny · +' + DAILY_REWARD + ' mincí'}</span></div>
+        : `Stejná pro všechny · +${DAILY_REWARD} mincí a nápověda zdarma 🎁`}</span></div>
     </button>
+    ${cleanLine(player) ? `<p class="own-stat">${cleanLine(player)}</p>` : ''}
     <div id="board-box"><p style="opacity:0.7">Načítám žebříček…</p></div>
     <button class="big-btn" id="ov-switch">Vyměnit hráče</button>
     <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
@@ -1001,9 +1143,10 @@ const RULES = [
   ['ˇ', 'Háčky a čárky píše hra', 'Na kolečku jsou písmena bez diakritiky. Napiš KRIDLO a hra z toho udělá KŘÍDLO. Když holý tvar sedí na víc slov, zeptá se.'],
   ['🧩', 'Vyplň křížovku', 'Když slovo v křížovce je, jeho písmena vlétnou do mřížky. Úroveň končí, jakmile je mřížka celá plná.'],
   ['⭐', 'Bonusová slova', 'Najdeš-li platné české slovo, které v křížovce není, počítá se jako bonus. Za každých 10 bonusů dostaneš mince.'],
-  ['💡', 'Nápovědy', 'Žárovka (25 mincí) odkryje náhodné písmeno, kladivo (60 mincí) políčko, které si vybereš. Mince získáváš za dokončené úrovně.'],
-  ['★', 'Tři hvězdy', 'Za dokončení máš hvězdu, bez použití nápovědy dvě, a když k tomu najdeš tři bonusová slova (u malých úrovní všechna), máš všechny tři.'],
-  ['📅', 'Denní výzva', 'Každý den jedna hádanka — stejná pro všechny. Za dokončení jsou mince a roste ti série 🔥.'],
+  ['💡', 'Nápovědy', `Žárovka odkryje náhodné písmeno, kladivo políčko, které si vybereš (za dvojnásobek). První nápověda v kole stojí ${HINT_BASE} mincí a každá další v tomtéž kole je dvakrát dražší — v novém kole se cena vrací na ${HINT_BASE}. Mince jsou za dokončené úrovně a za bonusová slova.`],
+  ['🎁', 'Nápověda zdarma', 'Za denní výzvu dostaneš nápovědu, kterou nemusíš platit — žárovka se obarví zeleně. Za každý pátý den v řadě je jedna navíc.'],
+  ['★', 'Tři hvězdy', 'Za dokončení máš hvězdu, bez použití nápovědy dvě, a když k tomu najdeš tři bonusová slova (u malých úrovní všechna), máš všechny tři. Kolik kol jsi zvládl bez nápovědy vidíš v žebříčku 🧠.'],
+  ['📅', 'Denní výzva', 'Každý den jedna hádanka — stejná pro všechny. Za dokončení jsou mince, nápověda zdarma a roste ti série 🔥.'],
   ['🏆', 'Žebříček', 'Hraješ o nejvyšší úroveň, pak o hvězdy. Žebříček je společný pro všechny kamarády.'],
   ['⚑', 'Nesedí ti slovo?', 'Tlačítkem vedle slova ho můžeš nahlásit — hra se díky tomu zlepšuje.'],
 ];
@@ -1605,6 +1748,15 @@ async function boot() {
     }),
     level: () => level,
     busy: () => busy,
+    hints: () => ({
+      bought: hintsBought,
+      bulb: bulbCost(),
+      hammer: hammerCost(),
+      free: freeHints(),
+      usedHint,
+      clean: cleanLevels(player),
+      streak: cleanStreak(player),
+    }),
   };
 }
 

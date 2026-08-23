@@ -370,6 +370,9 @@ body {
   white-space: nowrap;
 }
 .tool-btn .cost i { font-style: normal; }
+/* a hint the daily paid for: green and spelled out, so it reads at a glance */
+.tool-btn.free .cost { background: #7bd88f; color: #14361d; font-size: 9.5px; padding: 1.5px 6px; }
+.tool-btn.free { border-color: rgba(123, 216, 143, 0.6); }
 #btn-jar svg { color: var(--bonus); }
 #btn-jar .jar-count { background: #fff; }
 #btn-jar.wiggle { animation: wiggle 0.5s ease; }
@@ -511,6 +514,15 @@ body {
   padding: 9px 12px;
   margin-top: 10px;
 }
+/* the player's own no-hint tally, above the shared board */
+#overlay-card .own-stat {
+  font-size: 13px;
+  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  padding: 8px 12px;
+  margin: 10px 0 4px;
+}
 #overlay-card .reward {
   display: inline-flex;
   align-items: center;
@@ -523,6 +535,8 @@ body {
   font-size: 18px;
 }
 #overlay-card .reward svg { width: 22px; height: 22px; }
+/* a coin dropped into a sentence has no box of its own to be sized by */
+#overlay-card p svg { width: 1.05em; height: 1.05em; vertical-align: -0.16em; }
 #overlay-card .words {
   display: flex;
   flex-wrap: wrap;

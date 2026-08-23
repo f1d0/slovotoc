@@ -15,6 +15,7 @@ export function newPlayer(name, avatar) {
     levelIndex: 0,
     best: 0,            // highest level ever reached (leaderboard score)
     bonusTotal: 0,
+    freeHints: 0,       // hints earned from the daily challenge, cost nothing
     stars: {},          // levelIndex -> 1..3
     daily: null,        // { day, streak, best } for the daily challenge
     sawTip: false,
@@ -81,6 +82,7 @@ export function claimLegacy(root, player) {
   player.coins = l.coins ?? player.coins;
   player.levelIndex = l.levelIndex ?? player.levelIndex;
   player.bonusTotal = l.bonusTotal ?? player.bonusTotal;
+  player.freeHints = l.freeHints ?? player.freeHints;
   player.sawTip = l.sawTip ?? player.sawTip;
   player.cur = l.cur ?? null;
   delete root.legacy;
