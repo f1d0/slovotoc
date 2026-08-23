@@ -141,6 +141,53 @@ const type = async (p, n) => { await p.fill('#np-name', n); await p.click('#np-g
   rec('vlastní řádek je zvýrazněný', /Hana/.test(highlighted), highlighted);
   await p.__ctx.close(); }
 
+// 8. Exactly what happened on Filip's phone: a profile named Hana already sat
+// in this device's storage, so typing the name walked straight in — past the
+// PIN she had since set — and the only sign was the score refusing to save.
+{ const p = await page({ 'Hana': { pin:'4321', hint:'delfín', levels:30, avatar:'🐬' } });
+  await p.evaluate(() => {
+    const mk = (name, lvl) => ({ name, avatar:'🐬', coins:100, levelIndex:lvl, best:lvl, bonusTotal:1,
+      stars:{}, daily:null, sawTip:true, pin:null, pinAsked:true, cur:null, createdAt:Date.now(), lastPlayed:Date.now() });
+    localStorage.setItem('slovotoc-v2', JSON.stringify({ v:2, sound:true, active:null,
+      deviceId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', sawInApp:true, players:{ 'Hana': mk('Hana',30) } }));
+  });
+  await p.reload({ waitUntil:'domcontentloaded' });
+  await p.waitForSelector('#np-name', {timeout:20000});
+
+  // via the chip in the list
+  await p.click('.player-chip[data-name="Hana"]'); await p.waitForTimeout(1800);
+  const askedChip = await p.locator('#pin-in').count()===1;
+  const inGame = await p.evaluate(()=>window.__slovotoc?.state().player);
+  rec('místní profil se zamčeným jménem chce PIN (dlaždice)', askedChip && !inGame,
+      askedChip ? 'ptá se ✓' : 'PUSTILO DOVNITŘ jako '+inGame);
+
+  // wrong PIN keeps them out
+  await p.fill('#pin-in','0000'); await p.click('#pin-go'); await p.waitForTimeout(900);
+  rec('špatný PIN nepustí ani u místního profilu',
+      await p.evaluate(()=>window.__slovotoc?.state().player)==null);
+
+  // right one gets in and is remembered for next time
+  await p.fill('#pin-in','4321'); await p.click('#pin-go'); await p.waitForTimeout(7000);
+  const st = await p.evaluate(()=>({ who: window.__slovotoc?.state().player,
+    saved: JSON.parse(localStorage.getItem('slovotoc-v2')).players['Hana'].pin }));
+  rec('správný PIN pustí a zapamatuje se', st.who==='Hana' && st.saved==='4321', JSON.stringify(st));
+  await p.__ctx.close(); }
+
+// 9. A device that already knows the PIN must not be asked again.
+{ const p = await page({ 'Hana': { pin:'4321', levels:30, avatar:'🐬' } });
+  await p.evaluate(() => {
+    localStorage.setItem('slovotoc-v2', JSON.stringify({ v:2, sound:true, active:null,
+      deviceId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc', sawInApp:true, players:{ 'Hana':
+      { name:'Hana', avatar:'🐬', coins:100, levelIndex:30, best:30, bonusTotal:1, stars:{},
+        daily:null, sawTip:true, pin:'4321', pinAsked:true, cur:null, createdAt:Date.now(), lastPlayed:Date.now() } } }));
+  });
+  await p.reload({ waitUntil:'domcontentloaded' });
+  await p.waitForSelector('#np-name', {timeout:20000});
+  await p.click('.player-chip[data-name="Hana"]'); await p.waitForTimeout(7000);
+  rec('uložený PIN se podruhé neptá',
+      await p.evaluate(()=>window.__slovotoc?.state().player)==='Hana');
+  await p.__ctx.close(); }
+
 console.log('\n' + out.filter(x=>!x.ok).length + ' selhalo z ' + out.length);
 await b.close(); stop();
 process.exit(out.some(x=>!x.ok) ? 1 : 0);

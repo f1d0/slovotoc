@@ -1137,9 +1137,20 @@ async function fillRemotePlayers() {
           </button>`).join('')}
       </div>`;
     for (const chip of box.querySelectorAll('.player-chip')) {
-      chip.onclick = () => {
+      chip.onclick = async () => {
         const row = others.find(r => r.name === chip.dataset.name);
-        if (row) adoptPlayer(row);
+        if (!row) return;
+        // The board rows cannot say whether a name is locked – the hash column
+        // is not readable – so ask about this one name before handing it over.
+        chip.disabled = true;
+        let status = null;
+        try { status = await nameStatus(row.name); } catch { /* offline */ }
+        chip.disabled = false;
+        if (!status?.locked) return adoptPlayer(row, null, true);
+        askPin(row.name, status, () => showPlayerPicker(), (pin, r) =>
+          adoptPlayer({ name: row.name, avatar: r.avatar, levels: r.levels,
+                        bonus: r.bonus, coins: r.coins, stars: r.stars,
+                        streak: r.streak }, pin));
       };
     }
   } catch {
@@ -1289,6 +1300,30 @@ function pinRow(id) {
             maxlength="4" class="pin-input" placeholder="••••" autocomplete="off" />`;
 }
 
+// Every route into an existing profile goes through here. A profile sitting
+// in this device's storage used to be enough to walk straight in, which meant
+// anyone who had once typed a name kept playing as its owner — and only found
+// out when the score refused to save. The device has to have proved it knows
+// the PIN at least once.
+async function enterLocal(name, back) {
+  const p = root.players[name];
+  if (!p) return createPlayer(name);
+  const start = () => { p.lastPlayed = Date.now(); startAs(name); };
+  if (p.pin) return start();          // this device already knows it
+
+  let status = null;
+  try { status = await nameStatus(name); } catch { /* offline */ }
+  // Offline, or no lock on the name: play. Never block the game on the board
+  // being reachable.
+  if (!status || !status.locked) return start();
+
+  askPin(name, status, back, pin => {
+    p.pin = pin;
+    saveRoot(root);
+    start();
+  });
+}
+
 function createPlayer(name) {
   const used = new Set(Object.values(root.players).map(p => p.avatar));
   const free = AVATARS.filter(a => !used.has(a));
@@ -1301,7 +1336,7 @@ function createPlayer(name) {
 }
 
 // The name is locked. Only the PIN gets you in.
-function askPin(name, status, back) {
+function askPin(name, status, back, onOk) {
   showOverlay(`
     <h2>🔒 ${esc(name)}</h2>
     <p>Tohle jméno je zamčené PINem. Zadej ho a pokračuj tam, kde jsi
@@ -1337,6 +1372,7 @@ function askPin(name, status, back) {
       inp.focus();
       return;
     }
+    if (onOk) return onOk(pin, r);
     adoptPlayer({ name, avatar: r.avatar, levels: r.levels, bonus: r.bonus,
                   coins: r.coins, stars: r.stars, streak: r.streak }, pin);
   };
@@ -1434,11 +1470,7 @@ function showPlayerPicker(intro = false, editing = false) {
     b.onclick = () => confirmDeletePlayer(b.dataset.del, () => showPlayerPicker(intro, true));
   }
   for (const chip of els.overlayCard.querySelectorAll('.player-chip:not([disabled])')) {
-    chip.onclick = () => {
-      const p = root.players[chip.dataset.name];
-      p.lastPlayed = Date.now();
-      startAs(chip.dataset.name);
-    };
+    chip.onclick = () => enterLocal(chip.dataset.name, () => showPlayerPicker(intro, editing));
   }
   const input = $('#np-name');
   const go = async () => {
@@ -1455,10 +1487,8 @@ function showPlayerPicker(intro = false, editing = false) {
       input.select();
       return;
     }
-    // Already a profile on this device: nothing to check, it is theirs.
     if (root.players[name]) {
-      root.players[name].lastPlayed = Date.now();
-      return startAs(name);
+      return enterLocal(name, () => showPlayerPicker(intro, editing));
     }
     const btn = $('#np-go');
     const label = btn.textContent;
