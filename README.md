@@ -308,8 +308,11 @@ tap, and `npm run reports` lists what is waiting:
 Acting on one is: add the word to `tools/extra-words.txt` with a note on what
 it is, `npm run words`, then set the row's status to `added` in Supabase so it
 drops off the list. Reporting the same word twice from one phone is not a new
-report, and a report that cannot be sent is copied to the clipboard rather
-than dropped.
+report — a plain insert whose unique constraint answers 409, which the client
+counts as success. Deliberately not an upsert: an upsert names the conflicting
+columns, and naming `device_id` means being able to read it, which is exactly
+what the grant below withholds. A report that cannot be sent is copied to the
+clipboard rather than dropped.
 
 The public key can read a report but not who sent it — the player name and
 device id are not among the granted columns, because that key ships in the

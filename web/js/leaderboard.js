@@ -111,14 +111,18 @@ export async function fetchTop(limit = 100) {
 const REPORTS = URL.replace(/\/leaderboard$/, '/word_reports');
 
 export async function reportWord({ word, kind, level, player, deviceId }) {
-  const res = await fetch(`${REPORTS}?on_conflict=word,kind,device_id`, {
+  const res = await fetch(REPORTS, {
     method: 'POST',
-    // ignore-duplicates: reporting the same word twice from one phone is not
-    // a new report, and must not come back as an error either
-    headers: { ...HEADERS, Prefer: 'resolution=ignore-duplicates,return=minimal' },
+    headers: { ...HEADERS, Prefer: 'return=minimal' },
     body: JSON.stringify([{ word, kind, level, player, device_id: deviceId }]),
     signal: timeoutSignal(),
   });
+  // 409 is the unique constraint: this phone has reported this word before.
+  // That is a success as far as the player is concerned, and it is why this
+  // is a plain insert rather than an upsert — an upsert names the conflicting
+  // columns, and naming device_id means being able to read it, which the
+  // public key deliberately cannot do.
+  if (res.status === 409) return;
   if (!res.ok) throw new Error(`reportWord ${res.status}`);
 }
 

@@ -201,10 +201,11 @@ const openBoard = async page => {
 // ---------------------------------------------------------------- 7
 // Reporting a word: one tap, straight to the database, no GitHub anywhere.
 {
-  let sent = null;
+  let sent = null, sentUrl = null;
   const page = await open({
     supabase: async r => {
       if (r.request().url().includes('word_reports')) {
+        sentUrl = r.request().url();
         sent = JSON.parse(r.request().postData() ?? '[]')[0];
         return r.fulfill({ status: 201, contentType: 'application/json', body: '' });
       }
@@ -225,12 +226,44 @@ const openBoard = async page => {
   record('reporting a word writes it to the database',
     sent != null && sent.word === word && sent.kind === 'wrong' && sent.player === 'Filip',
     sent ? JSON.stringify(sent) : 'nothing sent');
+  // An upsert would name device_id as the conflict target, and naming it
+  // means being able to read it — which the public key must not.
+  record('the report is a plain insert, not an upsert',
+    sentUrl != null && !sentUrl.includes('on_conflict'),
+    sentUrl?.split('/rest/v1/')[1] ?? 'no request');
   const closed = await page.evaluate(() => document.querySelector('#overlay').classList.contains('hidden'));
   record('and closes with a thank-you', closed);
   await page.__ctx.close();
 }
 
 // ---------------------------------------------------------------- 8
+// Reporting the same word twice from one phone answers 409, and that is a
+// success, not a failure the player should ever see.
+{
+  const page = await open({
+    supabase: async r => r.request().url().includes('word_reports')
+      ? r.fulfill({ status: 409, contentType: 'application/json',
+          body: JSON.stringify({ code: '23505', message: 'duplicate key value violates unique constraint' }) })
+      : r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ROWS) }),
+  });
+  await dismissNews(page);
+  const word = await page.evaluate(() => window.__slovotoc.level().words[0].w);
+  await page.evaluate(w => window.__slovotoc.submit(w), word);
+  await page.waitForTimeout(1500);
+  await page.click('#btn-report');
+  await page.waitForTimeout(700);
+  await page.click('#rep-send');
+  await page.waitForTimeout(1500);
+  const st = await page.evaluate(() => ({
+    closed: document.querySelector('#overlay').classList.contains('hidden'),
+    toast: document.querySelector('#toast')?.textContent ?? '',
+  }));
+  record('reporting the same word twice still says thank you',
+    st.closed && /Díky/.test(st.toast), `${st.toast}`.slice(0, 50));
+  await page.__ctx.close();
+}
+
+// ---------------------------------------------------------------- 9
 // …and if the table is not there yet, the report is not simply lost.
 {
   const page = await open({
