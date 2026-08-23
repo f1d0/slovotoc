@@ -75,7 +75,12 @@ slow and non-deterministic. `levels.json` is the frozen result.
 **Crossword answers are dictionary headwords only** — nouns in the nominative,
 verbs in the infinitive — taken from Wiktionary. Inflected fragments like
 *kol* or *jsme* never appear as answers. Bonus words are deliberately far more
-permissive, so ordinary Czech is accepted even when it is not a headword.
+permissive, so ordinary Czech is accepted even when it is not a headword —
+the accept pool merges a hunspell-derived form list with the inflection
+tables Wiktionary publishes, because the form list alone had gaps (the whole
+paradigm of *osa* was missing bar the nominative, so OSE was refused in all
+twelve levels it fits). `tools/expand-bonus.mjs` rebuilds those lists without
+touching a single crossword.
 
 ## Running it locally
 
