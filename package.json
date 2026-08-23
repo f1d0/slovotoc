@@ -13,6 +13,7 @@
     "levels": "node tools/generate-levels.mjs",
     "backgrounds": "node tools/fetch-backgrounds.mjs",
     "words": "node tools/add-words.mjs",
+    "reports": "node tools/reports.mjs",
     "test:levels": "node tests/all-levels.mjs",
     "test:pin": "node tests/pin.mjs",
     "test:inapp": "node tests/inapp.mjs",

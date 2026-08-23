@@ -294,6 +294,27 @@ collapsed) so `K0k0t` and `k.o.k.o.t` are caught along with the plain
 spelling. This runs in the browser, so it stops someone picking a rude name
 rather than someone determined to force one through.
 
+## When a player says a word is missing
+
+The ⚑ button used to open a GitHub issue. That works for exactly one person
+and none of the children playing, so reports went nowhere. They now go to a
+`word_reports` table ([`docs/word-reports.sql`](docs/word-reports.sql)) in one
+tap, and `npm run reports` lists what is waiting:
+
+```
+#7   23.8. 15:31  LOKŠ         mělo být uznáno   úroveň 31
+```
+
+Acting on one is: add the word to `tools/extra-words.txt` with a note on what
+it is, `npm run words`, then set the row's status to `added` in Supabase so it
+drops off the list. Reporting the same word twice from one phone is not a new
+report, and a report that cannot be sent is copied to the clipboard rather
+than dropped.
+
+The public key can read a report but not who sent it — the player name and
+device id are not among the granted columns, because that key ships in the
+game's source.
+
 ## Telling players what changed
 
 `NEWS` in `web/js/main.js` is a short changelog, newest first. A player has

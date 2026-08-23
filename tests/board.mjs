@@ -198,6 +198,65 @@ const openBoard = async page => {
   await page.__ctx.close();
 }
 
+// ---------------------------------------------------------------- 7
+// Reporting a word: one tap, straight to the database, no GitHub anywhere.
+{
+  let sent = null;
+  const page = await open({
+    supabase: async r => {
+      if (r.request().url().includes('word_reports')) {
+        sent = JSON.parse(r.request().postData() ?? '[]')[0];
+        return r.fulfill({ status: 201, contentType: 'application/json', body: '' });
+      }
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ROWS) });
+    },
+  });
+  await dismissNews(page);
+  const word = await page.evaluate(() => window.__slovotoc.level().words[0].w);
+  await page.evaluate(w => window.__slovotoc.submit(w), word);
+  await page.waitForTimeout(1500);
+  await page.click('#btn-report');
+  await page.waitForTimeout(700);
+  const card = await page.innerText('#overlay-card');
+  record('the report screen no longer mentions GitHub', !/GitHub/i.test(card),
+    card.split('\n').slice(-1)[0]?.slice(0, 50));
+  await page.click('#rep-send');
+  await page.waitForTimeout(1500);
+  record('reporting a word writes it to the database',
+    sent != null && sent.word === word && sent.kind === 'wrong' && sent.player === 'Filip',
+    sent ? JSON.stringify(sent) : 'nothing sent');
+  const closed = await page.evaluate(() => document.querySelector('#overlay').classList.contains('hidden'));
+  record('and closes with a thank-you', closed);
+  await page.__ctx.close();
+}
+
+// ---------------------------------------------------------------- 8
+// …and if the table is not there yet, the report is not simply lost.
+{
+  const page = await open({
+    supabase: async r => r.request().url().includes('word_reports')
+      ? r.fulfill({ status: 404, contentType: 'application/json', body: '{}' })
+      : r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ROWS) }),
+  });
+  await dismissNews(page);
+  const word = await page.evaluate(() => window.__slovotoc.level().words[0].w);
+  await page.evaluate(w => window.__slovotoc.submit(w), word);
+  await page.waitForTimeout(1500);
+  await page.click('#btn-report');
+  await page.waitForTimeout(700);
+  await page.click('#rep-send');
+  await page.waitForTimeout(1500);
+  const st = await page.evaluate(() => ({
+    open: !document.querySelector('#overlay').classList.contains('hidden'),
+    btn: document.querySelector('#rep-send')?.textContent,
+    toast: document.querySelector('#toast')?.textContent ?? '',
+  }));
+  record('a failed report says so and can be retried',
+    st.open && /znovu/i.test(st.btn ?? '') && /nepovedlo/i.test(st.toast),
+    `${st.btn} · ${st.toast}`.slice(0, 70));
+  await page.__ctx.close();
+}
+
 console.log('\n' + '='.repeat(60));
 const failed = results.filter(r => !r.ok);
 console.log(`${results.length - failed.length}/${results.length} passed`);
