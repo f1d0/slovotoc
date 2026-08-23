@@ -5,6 +5,7 @@ import {
   pushScore, pushScorePin, fetchTop, fetchPlayer,
   nameStatus, signIn, setPin, pinSupported,
 } from './leaderboard.js';
+import { nameProblem } from './wordfilter.js';
 import { Wheel, UC } from './wheel.js';
 import { Grid } from './grid.js';
 import { confettiBurst } from './confetti.js';
@@ -13,8 +14,17 @@ import {
   sndReveal, sndCoin, sndFanfare,
 } from './audio.js';
 
-const BULB_COST = 25;
-const HAMMER_COST = 60;
+// Hints get more expensive with every one bought in the same level, and the
+// price starts over in the next one. Flat prices meant a player with a few
+// thousand coins could simply buy whole crosswords — 3805 coins was five
+// finished levels — while the very first hint was still dear for a beginner.
+// Doubling fixes both ends: the first hint of a level is cheaper than it used
+// to be, the sixth is out of reach for anyone.
+const HINT_BASE = 20;            // first hint of a level
+const HINT_GROWTH = 2;           // …and each further one in the same level
+const HAMMER_MULT = 2;           // choosing the square costs twice the bulb
+const DAILY_FREE_HINTS = 1;      // free hints for finishing the daily
+const DAILY_STREAK_BONUS = 5;    // …plus one more on every Nth day in a row
 const LEVEL_REWARD_BASE = 10;
 const LEVEL_REWARD_PER_WORD = 2;
 const BONUS_MILESTONE = 10;      // every N bonus words…
@@ -58,7 +68,9 @@ const els = {
   rope: $('#rope-svg'),
   shuffle: $('#btn-shuffle'),
   bulb: $('#btn-bulb'),
+  bulbCost: $('#btn-bulb .cost i'),
   hammer: $('#btn-hammer'),
+  hammerCost: $('#btn-hammer .cost i'),
   jar: $('#btn-jar'),
   bonusCount: $('#bonus-count'),
   sound: $('#btn-sound'),
@@ -91,6 +103,7 @@ let curPack = null;         // pack the current level belongs to
 let levelIdx = 0;           // index of the level on screen (differs in daily mode)
 let dailyMode = false;      // playing the daily challenge, not the campaign
 let usedHint = false;       // any hint used on the current level (star rule)
+let hintsBought = 0;        // hints paid for in this level – sets the price
 let lastWord = '';          // last submitted word (for reporting)
 let lastWordAccepted = false;
 let reportTimer = null;
@@ -116,9 +129,37 @@ function setCoins(n, bump = false) {
   updateToolButtons();
 }
 
+// ---------- hint prices ----------
+
+// The nth hint of a level costs double the one before it, with no ceiling:
+// a ceiling is exactly what let a large purse buy a crossword. In practice
+// the sixth hint (640) already ends the conversation. Free hints from the
+// daily do not move the ladder — they are a gift, not a purchase.
+function hintStep(n = hintsBought) {
+  return HINT_BASE * HINT_GROWTH ** n;
+}
+const bulbCost = () => hintStep();
+const hammerCost = () => hintStep() * HAMMER_MULT;
+const freeHints = () => player?.freeHints ?? 0;
+// Nobody will get here, but a price badge must never grow wider than its
+// button: past four figures it reads as thousands.
+const price = n => (n >= 10000 ? `${Math.round(n / 1000)}k` : String(n));
+
 function updateToolButtons() {
-  els.bulb.classList.toggle('disabled', player.coins < BULB_COST);
-  els.hammer.classList.toggle('disabled', player.coins < HAMMER_COST && !hammerArmed);
+  if (!player) return;
+  const free = freeHints() > 0;
+  const bulb = bulbCost();
+  const hammer = hammerCost();
+  const spare = freeHints();
+  els.bulbCost.textContent = free ? (spare > 1 ? `zdarma ${spare}×` : 'zdarma') : price(bulb);
+  els.hammerCost.textContent = price(hammer);
+  els.bulb.classList.toggle('free', free);
+  els.bulb.classList.toggle('disabled', !free && player.coins < bulb);
+  els.hammer.classList.toggle('disabled', player.coins < hammer && !hammerArmed);
+  els.bulb.setAttribute('aria-label', free
+    ? 'Nápověda zdarma – odkrýt náhodné písmeno'
+    : `Nápověda za ${bulb} mincí – odkrýt náhodné písmeno`);
+  els.hammer.setAttribute('aria-label', `Nápověda za ${hammer} mincí – vyber políčko`);
 }
 
 // Tells the player how much of the crossword is actually left, so a streak
@@ -172,6 +213,7 @@ function persist() {
     found: [...found],
     hinted: [...hinted],
     bonus: [...foundBonus],
+    hints: hintsBought,   // reloading must not reset the price ladder
   };
   saveRoot(root);
 }
@@ -261,6 +303,7 @@ function loadLevel(restore = false, opts = {}) {
   level = LEVELS[levelIdx];
   curPack = pack;
   usedHint = false;
+  hintsBought = 0;   // the price starts over in every level
   applyTheme(packIdx, pack);
 
   els.packName.textContent = dailyMode ? '📅 Denní výzva' : pack.name;
@@ -293,6 +336,10 @@ function loadLevel(restore = false, opts = {}) {
       grid.reveal(k, { hinted: true, silent: true });
     }
     for (const b of player.cur.bonus) foundBonus.add(b);
+    // Older saves predate the counter; every hint reveals exactly one cell,
+    // so the revealed hints are a safe lower bound for what was paid for.
+    hintsBought = player.cur.hints ?? player.cur.hinted.length;
+    usedHint = hinted.size > 0;
   }
 
   els.bonusCount.textContent = foundBonus.size;
@@ -516,18 +563,27 @@ function hintReveal(k) {
 
 function useBulb() {
   if (busy || hammerArmed) return;
-  if (player.coins < BULB_COST) { toast('Nedostatek mincí 🙁'); return; }
   const keys = grid.unrevealedKeys();
   if (!keys.length) return;
+  const free = freeHints() > 0;
+  const cost = bulbCost();
+  if (!free && player.coins < cost) return offerHintTopUp(cost);
   usedHint = true;
-  setCoins(player.coins - BULB_COST);
+  if (free) {
+    player.freeHints -= 1;
+    toast('Nápověda zdarma z denní výzvy 🎁');
+    updateToolButtons();
+  } else {
+    hintsBought += 1;
+    setCoins(player.coins - cost);
+  }
   const k = keys[Math.floor(Math.random() * keys.length)];
   hintReveal(k);
 }
 
 function toggleHammer() {
   if (busy) return;
-  if (!hammerArmed && player.coins < HAMMER_COST) { toast('Nedostatek mincí 🙁'); return; }
+  if (!hammerArmed && player.coins < hammerCost()) return offerHintTopUp(hammerCost());
   hammerArmed = !hammerArmed;
   els.hammer.classList.toggle('armed', hammerArmed);
   grid.setPickMode(hammerArmed);
@@ -542,9 +598,47 @@ els.grid.addEventListener('click', e => {
   els.hammer.classList.remove('armed');
   grid.setPickMode(false);
   usedHint = true;
-  setCoins(player.coins - HAMMER_COST);
+  const cost = hammerCost();
+  hintsBought += 1;
+  setCoins(player.coins - cost);
   hintReveal(cell.dataset.k);
 });
+
+// A player who cannot afford a hint used to get "Nedostatek mincí 🙁" and
+// nothing else — a dead end. Say where the coins come from instead, and hand
+// them the daily challenge, which pays both coins and a free hint.
+function offerHintTopUp(cost) {
+  const dailyOpen = !dailyMode && !dailyDone();
+  const toMilestone = BONUS_MILESTONE - (player.bonusTotal % BONUS_MILESTONE);
+  // Being turned away from the hammer while the bulb is still within reach is
+  // the commonest case, and the least worth an overlay of bad news.
+  const bulbInstead = cost > bulbCost() &&
+    (freeHints() > 0 || player.coins >= bulbCost());
+  showOverlay(`
+    <h2>💡 Na nápovědu ti nestačí mince</h2>
+    <p>Tady stojí <b>${cost}</b> ${coinSvg()}, ty máš <b>${player.coins}</b>.</p>
+    ${bulbInstead
+      ? `<p class="fact">💡 Na žárovku ti ale stačí — odkryje náhodné písmeno
+           ${freeHints() > 0 ? 'a jednu máš zdarma 🎁' : `za ${bulbCost()} mincí`}.</p>`
+      : ''}
+    ${dailyOpen
+      ? `<button class="daily-btn" id="ov-daily"><em>📅</em>
+           <div><b>Zkus denní výzvu</b><span>+${DAILY_REWARD} mincí a nápověda zdarma 🎁</span></div>
+         </button>`
+      : `<p class="fact">📅 Denní výzvu už máš dnes hotovou — zítra bude nová,
+           s dalšími mincemi a nápovědou zdarma.</p>`}
+    <p class="fact">⭐ Ještě <b>${toMilestone}</b> ${toMilestone === 1 ? 'bonusové slovo' :
+        toMilestone < 5 ? 'bonusová slova' : 'bonusových slov'} a máš
+      +${BONUS_MILESTONE_COINS} mincí. Bonusové slovo je jakékoliv české slovo
+      z písmen v kole, i když není v křížovce.</p>
+    <p style="font-size:12.5px;opacity:0.75">Každá další nápověda v jednom kole
+      stojí dvojnásobek. V dalším kole cena začíná znovu na ${HINT_BASE}.</p>
+    <button class="big-btn" id="ov-close">Zkusím to sám</button>
+  `);
+  $('#ov-close').onclick = hideOverlay;
+  const d = $('#ov-daily');
+  if (d) d.onclick = () => { hideOverlay(); startDaily(); };
+}
 
 // ---------- overlays ----------
 
@@ -606,14 +700,21 @@ function finishDaily() {
     day: todayKey(),
     streak: continued ? (d.streak ?? 0) + 1 : 1,
   };
+  const s = player.daily.streak;
+  // The daily is where a stuck player gets unstuck: it pays a hint they do
+  // not have to afford, and a streak worth keeping pays one more.
+  const gift = DAILY_FREE_HINTS + (s % DAILY_STREAK_BONUS === 0 ? 1 : 0);
+  player.freeHints = freeHints() + gift;
   setCoins(player.coins + DAILY_REWARD, true);
   saveRoot(root);
   syncScore(true);
-  const s = player.daily.streak;
   showOverlay(`
     <h1>📅 Denní výzva hotová!</h1>
     <p>Dnešní hádanku máš za sebou.</p>
-    <div class="reward">+${DAILY_REWARD} ${coinSvg()}</div>
+    <div class="reward">+${DAILY_REWARD} ${coinSvg()} &nbsp; +${gift} 💡</div>
+    <p style="font-size:13px">${gift > 1 ? 'Za sérii máš nápovědu navíc! ' : ''}Nápovědy
+      zdarma máš teď <b>${freeHints()}</b> — použiješ je žárovkou 💡 kdykoliv,
+      zadarmo a v jakékoliv úrovni.</p>
     <p class="fact">🔥 Série: <b>${s} ${s === 1 ? 'den' : s < 5 ? 'dny' : 'dní'}</b> v řadě${
       !continued && d.day ? ' — předchozí série se přerušila' : ''}</p>
     <button class="big-btn" id="ov-back">Zpět do hry</button>
@@ -625,8 +726,73 @@ function finishDaily() {
   };
 }
 
+// ---------- what's new ----------
+
+// Players find out what changed by playing and being surprised, which is a
+// poor way to learn that hints are priced differently now. Newest first; the
+// id is what a player has read up to, so adding an entry re-arms the dot.
+const NEWS = [
+  {
+    id: '2026-08-23-napovedy',
+    date: '23. 8. 2026',
+    title: 'Nápovědy, zámek jména a nová statistika',
+    items: [
+      '💡 <b>Nápovědy mají novou cenu.</b> První v kole stojí 20 mincí a každá další v tomtéž kole je dvakrát dražší. V dalším kole se cena vrací na 20 — první pomoc je tak levnější než dřív, ale celé kolo si koupit nejde.',
+      '🎁 <b>Za denní výzvu je nápověda zdarma.</b> Za každý pátý den v řadě jedna navíc. Žárovka se obarví zeleně.',
+      '🧠 <b>Počítá se, kolik kol zvládneš bez nápovědy</b> — najdeš to v žebříčku, i s nejdelší sérií.',
+      '🏆 <b>Žebříček se dá přepínat</b> podle toho, co tě zajímá, a po klepnutí na hráče uvidíš všechna jeho čísla.',
+      '🔒 <b>Jméno si můžeš zamknout PINem</b>, aby za tebe nikdo nehrál. Funguje na jakémkoliv telefonu, nic se neváže na jedno zařízení.',
+      '📖 <b>Hra uznává víc českých tvarů</b> (zelné, ose a spousta dalších).',
+    ],
+  },
+  {
+    id: '2026-08-16-domena',
+    date: '16. 8. 2026',
+    title: 'Vlastní adresa a hra na ploše telefonu',
+    items: [
+      '🌐 Hra má vlastní adresu <b>slovotoc.cz</b>.',
+      '📱 Dá se přidat na plochu telefonu a hrát na celou obrazovku — návod je v <b>ℹ️ O hře</b>.',
+      '⚑ U každého slova je tlačítko na nahlášení, když ti nesedí.',
+    ],
+  },
+];
+
+const newsUnread = () => !!player && player.seenNews !== NEWS[0].id;
+
+function markNewsRead() {
+  if (!player) return;
+  player.seenNews = NEWS[0].id;
+  saveRoot(root);
+  updateDailyBadge();
+}
+
+function showNews(back) {
+  const unread = newsUnread();
+  showOverlay(`
+    <h2>✨ Co je nového</h2>
+    ${NEWS.map((n, i) => `
+      <div class="news ${i === 0 && unread ? 'fresh' : ''}">
+        <b>${n.title}</b><i>${n.date}</i>
+        <ul>${n.items.map(t => `<li>${t}</li>`).join('')}</ul>
+      </div>`).join('')}
+    <button class="big-btn" id="ov-back">Rozumím</button>
+  `);
+  markNewsRead();
+  $('#ov-back').onclick = back;
+}
+
+// Shown once per new entry, and only to somebody who has played before —
+// a newcomer wants the game, not its release notes.
+function maybeShowNews() {
+  if (!player || !newsUnread()) return false;
+  if (player.seenNews === undefined && bestOf(player) === 0) { markNewsRead(); return false; }
+  if (bestOf(player) === 0) return false;
+  showNews(hideOverlay);
+  return true;
+}
+
 function updateDailyBadge() {
-  els.player.classList.toggle('has-badge', !dailyDone());
+  els.player.classList.toggle('has-badge', !dailyDone() || newsUnread());
 }
 
 // ---------- stars ----------
@@ -658,6 +824,49 @@ function totalStars(p) {
   return Object.values(p.stars ?? {}).reduce((a, b) => a + b, 0);
 }
 
+// A level finished without a hint is exactly a level worth two stars or
+// more, so this reads straight out of the stars that were already being
+// stored — everybody's count is right from the day it appears, with no
+// migration and nothing to backfill.
+function cleanLevels(p) {
+  const fromStars = Object.values(p.stars ?? {}).filter(n => n >= 2).length;
+  // A profile picked up on a second phone carries totals, not the per-level
+  // stars, so the number the board already knows is the floor — same rule
+  // `best` follows for levels.
+  return Math.max(fromStars, p.clean ?? 0);
+}
+
+// Longest run of consecutive levels done without a hint, plus the run the
+// player is on right now. Replaying a level can only raise its stars, so a
+// streak once earned is never taken away.
+function cleanStreak(p) {
+  const st = p.stars ?? {};
+  const top = Math.min(p.levelIndex ?? 0, LEVELS.length);
+  let best = 0, run = 0;
+  for (let i = 0; i < top; i++) {
+    if ((st[i] ?? 0) >= 2) { run += 1; if (run > best) best = run; } else run = 0;
+  }
+  return { best: Math.max(best, p.cleanBest ?? 0), now: run };
+}
+
+// Said only when it adds something: repeating "longest run 5" as "on a run of
+// 5" is noise, but being on the longest run you have ever had is not.
+function streakBrag(p) {
+  const { best, now } = cleanStreak(p);
+  if (now < 2) return '';
+  return now >= best
+    ? ' · právě jedeš svoji nejdelší sérii 🔥'
+    : ` · právě jedeš <b>${now}</b> v řadě 🔥`;
+}
+
+function cleanLine(p) {
+  const n = cleanLevels(p);
+  if (!n) return '';
+  const { best } = cleanStreak(p);
+  return `🧠 Bez nápovědy: <b>${n}</b> ${n === 1 ? 'kolo' : n < 5 ? 'kola' : 'kol'}` +
+    (best > 1 ? ` · nejdelší série <b>${best}</b>` : '');
+}
+
 // Fanfare and confetti are garnish. A player once sat on a completed level
 // that would not finish, because the confetti canvas refused a 2D context and
 // the exception took the level-advance timer down with it. Nothing decorative
@@ -678,6 +887,7 @@ function showAllDone() {
     <p>${esc(player.name)}, dokončil jsi všech ${LEVELS.length} úrovní Slovotoče!</p>
     <div class="reward">${coinSvg()} ${player.coins}</div>
     <p>Celkem bonusových slov: <b>${player.bonusTotal}</b></p>
+    ${cleanLine(player) ? `<p class="fact">${cleanLine(player)}</p>` : ''}
     <button class="big-btn" id="ov-board">🏆 Žebříček</button>
     <button class="ghost-btn" id="ov-restart">Hrát znovu od začátku</button>
   `);
@@ -745,6 +955,7 @@ function levelComplete() {
         : `<h1>Výborně!</h1><p>Úroveň ${player.levelIndex} je hotová.</p>`}
       ${starRow(stars)}
       <p style="font-size:12.5px;opacity:0.8">${starHint(stars)}</p>
+      ${stars >= 2 ? `<p class="fact">${cleanLine(player)}${streakBrag(player)}</p>` : ''}
       <div class="reward">+${reward} ${coinSvg()}</div>
       <button class="big-btn" id="ov-next">Další úroveň</button>
     `);
@@ -806,6 +1017,8 @@ function syncScore(immediate = false) {
     coins: player.coins,
     stars: totalStars(player),
     streak: player.daily?.streak ?? 0,
+    clean: cleanLevels(player),
+    cleanBest: cleanStreak(player).best,
   }).catch(err => { onPushFail(err); /* offline – next sync catches up */ });
   if (immediate) return doPush();
   syncTimer = setTimeout(doPush, 2500);
@@ -825,6 +1038,8 @@ function localRows() {
     coins: p.coins,
     stars: totalStars(p),
     streak: p.daily?.streak ?? 0,
+    clean: cleanLevels(p),
+    clean_best: cleanStreak(p).best,
     device_id: root.deviceId,
   }));
 }
@@ -832,29 +1047,89 @@ function localRows() {
 // The server copy can lag behind (a push may still be in flight, or have
 // failed offline), so this device's own players always win over server rows.
 function mergeLocal(rows) {
+  // Identity is the name, so that is what deduplicates. Matching on device
+  // instead showed a player twice on their own screen the moment their board
+  // row had been written from a different device — moving from the Messenger
+  // browser to the installed app is enough, because each keeps its own id.
   const local = localRows();
-  const isLocal = r => r.device_id === root.deviceId;
-  return [...rows.filter(r => !isLocal(r) || !local.some(l => l.name === r.name)), ...local];
+  const mine = new Set(local.map(l => l.name));
+  return [...rows.filter(r => !mine.has(r.name)), ...local];
 }
 
+// Five numbers on one row meant that on a 360px phone the names were cut to
+// "Šá…", "Ha…", "Tý…" — a leaderboard you cannot read the names on. So the
+// row carries one number, the player picks which, and the rest of a player's
+// figures live in a card behind their row.
+const METRICS = [
+  { id: 'levels', chip: '🏆 Úrovně',       head: 'Úrovně',  get: r => r.levels ?? 0 },
+  { id: 'stars',  chip: '★ Hvězdy',        head: '★',       get: r => r.stars ?? 0 },
+  { id: 'clean',  chip: '🧠 Bez nápovědy', head: 'Kol',     get: r => r.clean ?? 0 },
+  { id: 'bonus',  chip: '⭐ Bonusy',       head: 'Slova',   get: r => r.bonus ?? 0 },
+  // The daily streak is deliberately not a chip: the button directly above
+  // the board already shows it, and a fifth chip is the one that pushes the
+  // row onto a third line on a small phone.
+];
+let metricId = 'levels';
+let boardRows = [];   // whatever the board last showed, for the detail cards
+
 function renderBoard(rows, note) {
-  const medals = ['🥇', '🥈', '🥉'];
-  const sorted = rows.sort((a, b) =>
-    b.levels - a.levels || (b.stars ?? 0) - (a.stars ?? 0) || b.bonus - a.bonus || b.coins - a.coins);
+  boardRows = rows;
   const box = $('#board-box');
   if (!box) return;
+  const m = METRICS.find(x => x.id === metricId) ?? METRICS[0];
+  const medals = ['🥇', '🥈', '🥉'];
+  const sorted = [...rows].sort((a, b) =>
+    m.get(b) - m.get(a) || (b.levels ?? 0) - (a.levels ?? 0) ||
+    (b.stars ?? 0) - (a.stars ?? 0) || a.name.localeCompare(b.name, 'cs'));
+
   box.innerHTML = `
+    <div class="metrics">${METRICS.map(x =>
+      `<button class="chip ${x.id === metricId ? 'on' : ''}" data-m="${x.id}">${x.chip}</button>`).join('')}</div>
     <div class="board">
-      <div class="board-row board-head"><i></i><b>Hráč</b><span>Úrovně</span><span>★</span><span>⭐</span><span>🔥</span></div>
+      <div class="board-row board-head"><i></i><b>Hráč</b><span>${m.head}</span></div>
       ${sorted.map((r, i) => `
-        <div class="board-row ${r.device_id === root.deviceId && r.name === player?.name ? 'me' : ''}">
+        <button class="board-row ${r.name === player?.name ? 'me' : ''}" data-name="${esc(r.name)}">
           <i>${medals[i] ?? i + 1 + '.'}</i>
           <b>${safeAvatar(r.avatar)} ${esc(r.name)}</b>
-          <span>${r.levels}</span><span>${r.stars ?? 0}</span><span>${r.bonus}</span><span>${r.streak ?? 0}</span>
-        </div>`).join('')}
+          <span>${m.get(r)}</span>
+        </button>`).join('')}
     </div>
-    <p style="font-size:12px;opacity:0.7">${note}<br>
-      <b>Úrovně</b> · <b>★</b> hvězdy · <b>⭐</b> bonusová slova · <b>🔥</b> denní série</p>`;
+    <p style="font-size:12px;opacity:0.7">${note} Klepni na hráče a uvidíš všechna jeho čísla.</p>`;
+
+  for (const c of box.querySelectorAll('.chip')) {
+    c.onclick = () => { metricId = c.dataset.m; renderBoard(rows, note); };
+  }
+  for (const b of box.querySelectorAll('.board-row[data-name]')) {
+    b.onclick = () => showPlayerCard(b.dataset.name);
+  }
+}
+
+// Everything about one player, which is where the numbers that used to
+// crowd the row now live.
+function showPlayerCard(name) {
+  const row = boardRows.find(r => r.name === name);
+  if (!row) return;
+  const me = row.name === player?.name;
+  const streak = me ? cleanStreak(player) : { best: row.clean_best ?? 0 };
+  const tiles = [
+    ['🏆', 'Úroveň', row.levels ?? 0],
+    ['★', 'Hvězdy', row.stars ?? 0],
+    ['🧠', 'Kol bez nápovědy', row.clean ?? 0],
+    ['🎯', 'Nejdelší série bez nápovědy', streak.best],
+    ['⭐', 'Bonusová slova', row.bonus ?? 0],
+    ['🔥', 'Denní série', row.streak ?? 0],
+    ['🪙', 'Mince', row.coins ?? 0],
+  ];
+  if (me && freeHints() > 0) tiles.push(['🎁', 'Nápovědy zdarma', freeHints()]);
+
+  showOverlay(`
+    <h2>${safeAvatar(row.avatar)} ${esc(row.name)}</h2>
+    ${me ? '<p style="font-size:13px;opacity:0.8">To jsi ty 🙂</p>' : ''}
+    <div class="stat-grid">${tiles.map(([ic, label, val]) => `
+      <div class="stat"><em>${ic}</em><b>${val}</b><span>${label}</span></div>`).join('')}</div>
+    <button class="big-btn" id="ov-back">Zpět na žebříček</button>
+  `);
+  $('#ov-back').onclick = showLeaderboard;
 }
 
 async function showLeaderboard() {
@@ -865,11 +1140,12 @@ async function showLeaderboard() {
       <em>📅</em>
       <div><b>Denní výzva</b><span>${done
         ? `Dnes hotovo ✓ · série 🔥 ${player.daily?.streak ?? 0}`
-        : 'Stejná hádanka pro všechny · +' + DAILY_REWARD + ' mincí'}</span></div>
+        : `Stejná pro všechny · +${DAILY_REWARD} mincí a 💡 zdarma`}</span></div>
     </button>
     <div id="board-box"><p style="opacity:0.7">Načítám žebříček…</p></div>
     <button class="big-btn" id="ov-switch">Vyměnit hráče</button>
     <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
+    <button class="ghost-btn ${newsUnread() ? 'dot' : ''}" id="ov-news">✨ Co je nového</button>
     <button class="ghost-btn" id="ov-about">ℹ️ O hře a fotkách</button>
     <button class="ghost-btn" id="ov-pin">${player?.pin ? '🔒 Změnit PIN' : '🔒 Zamknout jméno PINem'}</button>
     ${INSTALL_BTN()}
@@ -877,6 +1153,7 @@ async function showLeaderboard() {
   $('#ov-switch').onclick = () => showPlayerPicker();
   $('#ov-close').onclick = hideOverlay;
   $('#ov-about').onclick = showAbout;
+  $('#ov-news').onclick = () => showNews(showLeaderboard);
   $('#ov-pin').onclick = () => showSetPin({ back: showLeaderboard });
   wireInstall(showLeaderboard);
   $('#ov-daily').onclick = () => {
@@ -940,6 +1217,8 @@ async function recoverIfEmpty(name) {
     p.best = row.levels;
     p.coins = Math.max(p.coins, row.coins ?? 0);
     p.bonusTotal = row.bonus ?? 0;
+    p.clean = Math.max(p.clean ?? 0, row.clean ?? 0);
+    p.cleanBest = Math.max(p.cleanBest ?? 0, row.clean_best ?? 0);
     if (row.streak) p.daily = { day: p.daily?.day ?? null, streak: row.streak };
     p.cur = null;
     saveRoot(root);
@@ -970,7 +1249,9 @@ function startAs(name, { recover = true } = {}) {
     loadLevel(true);
   }
   updateDailyBadge();
-  maybeWarnInApp();
+  // One overlay at a time: the Messenger warning is about being able to play
+  // at all, so it goes first and the news waits for the next launch.
+  if (!maybeWarnInApp()) setTimeout(maybeShowNews, 900);
   // reload the level once progress has been pulled from the shared board
   if (recover) {
     recoverIfEmpty(name).then(found => {
@@ -996,9 +1277,10 @@ const RULES = [
   ['ˇ', 'Háčky a čárky píše hra', 'Na kolečku jsou písmena bez diakritiky. Napiš KRIDLO a hra z toho udělá KŘÍDLO. Když holý tvar sedí na víc slov, zeptá se.'],
   ['🧩', 'Vyplň křížovku', 'Když slovo v křížovce je, jeho písmena vlétnou do mřížky. Úroveň končí, jakmile je mřížka celá plná.'],
   ['⭐', 'Bonusová slova', 'Najdeš-li platné české slovo, které v křížovce není, počítá se jako bonus. Za každých 10 bonusů dostaneš mince.'],
-  ['💡', 'Nápovědy', 'Žárovka (25 mincí) odkryje náhodné písmeno, kladivo (60 mincí) políčko, které si vybereš. Mince získáváš za dokončené úrovně.'],
-  ['★', 'Tři hvězdy', 'Za dokončení máš hvězdu, bez použití nápovědy dvě, a když k tomu najdeš tři bonusová slova (u malých úrovní všechna), máš všechny tři.'],
-  ['📅', 'Denní výzva', 'Každý den jedna hádanka — stejná pro všechny. Za dokončení jsou mince a roste ti série 🔥.'],
+  ['💡', 'Nápovědy', `Žárovka odkryje náhodné písmeno, kladivo políčko, které si vybereš (za dvojnásobek). První nápověda v kole stojí ${HINT_BASE} mincí a každá další v tomtéž kole je dvakrát dražší — v novém kole se cena vrací na ${HINT_BASE}. Mince jsou za dokončené úrovně a za bonusová slova.`],
+  ['🎁', 'Nápověda zdarma', 'Za denní výzvu dostaneš nápovědu, kterou nemusíš platit — žárovka se obarví zeleně. Za každý pátý den v řadě je jedna navíc.'],
+  ['★', 'Tři hvězdy', 'Za dokončení máš hvězdu, bez použití nápovědy dvě, a když k tomu najdeš tři bonusová slova (u malých úrovní všechna), máš všechny tři. Kolik kol jsi zvládl bez nápovědy vidíš v žebříčku 🧠.'],
+  ['📅', 'Denní výzva', 'Každý den jedna hádanka — stejná pro všechny. Za dokončení jsou mince, nápověda zdarma a roste ti série 🔥.'],
   ['🏆', 'Žebříček', 'Hraješ o nejvyšší úroveň, pak o hvězdy. Žebříček je společný pro všechny kamarády.'],
   ['⚑', 'Nesedí ti slovo?', 'Tlačítkem vedle slova ho můžeš nahlásit — hra se díky tomu zlepšuje.'],
 ];
@@ -1107,6 +1389,8 @@ function adoptPlayer(row, pin = null, offerPin = false) {
   p.best = row.levels ?? 0;
   p.coins = row.coins ?? p.coins;
   p.bonusTotal = row.bonus ?? 0;
+  p.clean = row.clean ?? 0;
+  p.cleanBest = row.clean_best ?? 0;
   if (row.streak) p.daily = { day: null, streak: row.streak };
   p.lastPlayed = Date.now();
   root.players[row.name] = p;
@@ -1132,9 +1416,20 @@ async function fillRemotePlayers() {
           </button>`).join('')}
       </div>`;
     for (const chip of box.querySelectorAll('.player-chip')) {
-      chip.onclick = () => {
+      chip.onclick = async () => {
         const row = others.find(r => r.name === chip.dataset.name);
-        if (row) adoptPlayer(row);
+        if (!row) return;
+        // The board rows cannot say whether a name is locked – the hash column
+        // is not readable – so ask about this one name before handing it over.
+        chip.disabled = true;
+        let status = null;
+        try { status = await nameStatus(row.name); } catch { /* offline */ }
+        chip.disabled = false;
+        if (!status?.locked) return adoptPlayer(row, null, true);
+        askPin(row.name, status, () => showPlayerPicker(), (pin, r) =>
+          adoptPlayer({ name: row.name, avatar: r.avatar, levels: r.levels,
+                        bonus: r.bonus, coins: r.coins, stars: r.stars,
+                        streak: r.streak }, pin));
       };
     }
   } catch {
@@ -1284,6 +1579,30 @@ function pinRow(id) {
             maxlength="4" class="pin-input" placeholder="••••" autocomplete="off" />`;
 }
 
+// Every route into an existing profile goes through here. A profile sitting
+// in this device's storage used to be enough to walk straight in, which meant
+// anyone who had once typed a name kept playing as its owner — and only found
+// out when the score refused to save. The device has to have proved it knows
+// the PIN at least once.
+async function enterLocal(name, back) {
+  const p = root.players[name];
+  if (!p) return createPlayer(name);
+  const start = () => { p.lastPlayed = Date.now(); startAs(name); };
+  if (p.pin) return start();          // this device already knows it
+
+  let status = null;
+  try { status = await nameStatus(name); } catch { /* offline */ }
+  // Offline, or no lock on the name: play. Never block the game on the board
+  // being reachable.
+  if (!status || !status.locked) return start();
+
+  askPin(name, status, back, pin => {
+    p.pin = pin;
+    saveRoot(root);
+    start();
+  });
+}
+
 function createPlayer(name) {
   const used = new Set(Object.values(root.players).map(p => p.avatar));
   const free = AVATARS.filter(a => !used.has(a));
@@ -1292,11 +1611,14 @@ function createPlayer(name) {
   root.players[name] = newPlayer(name, avatar);
   claimLegacy(root, root.players[name]);
   root.players[name].lastPlayed = Date.now();
+  // Somebody starting today has nothing to catch up on: the changelog is for
+  // people who were already playing when it changed.
+  root.players[name].seenNews = NEWS[0].id;
   startAs(name);
 }
 
 // The name is locked. Only the PIN gets you in.
-function askPin(name, status, back) {
+function askPin(name, status, back, onOk) {
   showOverlay(`
     <h2>🔒 ${esc(name)}</h2>
     <p>Tohle jméno je zamčené PINem. Zadej ho a pokračuj tam, kde jsi
@@ -1332,6 +1654,7 @@ function askPin(name, status, back) {
       inp.focus();
       return;
     }
+    if (onOk) return onOk(pin, r);
     adoptPlayer({ name, avatar: r.avatar, levels: r.levels, bonus: r.bonus,
                   coins: r.coins, stars: r.stars, streak: r.streak }, pin);
   };
@@ -1429,20 +1752,25 @@ function showPlayerPicker(intro = false, editing = false) {
     b.onclick = () => confirmDeletePlayer(b.dataset.del, () => showPlayerPicker(intro, true));
   }
   for (const chip of els.overlayCard.querySelectorAll('.player-chip:not([disabled])')) {
-    chip.onclick = () => {
-      const p = root.players[chip.dataset.name];
-      p.lastPlayed = Date.now();
-      startAs(chip.dataset.name);
-    };
+    chip.onclick = () => enterLocal(chip.dataset.name, () => showPlayerPicker(intro, editing));
   }
   const input = $('#np-name');
   const go = async () => {
     const name = input.value.trim();
     if (!name) { input.focus(); return; }
-    // Already a profile on this device: nothing to check, it is theirs.
+    // The name sits on a leaderboard children read, so it goes through the
+    // same filter the word list does.
+    const bad = nameProblem(name);
+    if (bad) {
+      toast(bad === 'nonsense' ? 'Zkus prosím jméno z písmen 🙂'
+          : bad === 'long' ? 'Jméno může mít nejvýš 14 znaků.'
+          : 'Tohle jméno použít nejde — zkus prosím jiné 🙂', 3000);
+      input.focus();
+      input.select();
+      return;
+    }
     if (root.players[name]) {
-      root.players[name].lastPlayed = Date.now();
-      return startAs(name);
+      return enterLocal(name, () => showPlayerPicker(intro, editing));
     }
     const btn = $('#np-go');
     const label = btn.textContent;
@@ -1559,6 +1887,15 @@ async function boot() {
     }),
     level: () => level,
     busy: () => busy,
+    hints: () => ({
+      bought: hintsBought,
+      bulb: bulbCost(),
+      hammer: hammerCost(),
+      free: freeHints(),
+      usedHint,
+      clean: cleanLevels(player),
+      streak: cleanStreak(player),
+    }),
   };
 }
 
