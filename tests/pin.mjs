@@ -106,6 +106,20 @@ const type = async (p, n) => { await p.fill('#np-name', n); await p.click('#np-g
   rec('vysvětlení „Proč PIN?" jde otevřít', /Proč PIN/.test(t) && /e-mail/i.test(t));
   await p.__ctx.close(); }
 
+// 6. a rude name is refused at the name box
+{ const p = await page({});
+  await p.fill('#np-name','kokot'); await p.click('#np-go'); await p.waitForTimeout(900);
+  const stuck = await p.locator('#np-name').count()===1;
+  const msg = await p.textContent('#toast').catch(()=>'');
+  rec('sprosté jméno se nepustí dál', stuck && /nejde/.test(msg), msg.trim());
+  // and the obfuscated spelling too
+  await p.fill('#np-name','K0k0t'); await p.click('#np-go'); await p.waitForTimeout(900);
+  rec('ani obcházené („K0k0t")', await p.locator('#np-name').count()===1);
+  // a normal name still works
+  await p.fill('#np-name','Bára'); await p.click('#np-go'); await p.waitForTimeout(7000);
+  rec('běžné jméno projde', await p.evaluate(()=>window.__slovotoc?.state().player)==='Bára');
+  await p.__ctx.close(); }
+
 console.log('\n' + out.filter(x=>!x.ok).length + ' selhalo z ' + out.length);
 await b.close(); stop();
 process.exit(out.some(x=>!x.ok) ? 1 : 0);

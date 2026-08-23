@@ -5,6 +5,7 @@ import {
   pushScore, pushScorePin, fetchTop, fetchPlayer,
   nameStatus, signIn, setPin, pinSupported,
 } from './leaderboard.js';
+import { nameProblem } from './wordfilter.js';
 import { Wheel, UC } from './wheel.js';
 import { Grid } from './grid.js';
 import { confettiBurst } from './confetti.js';
@@ -1439,6 +1440,17 @@ function showPlayerPicker(intro = false, editing = false) {
   const go = async () => {
     const name = input.value.trim();
     if (!name) { input.focus(); return; }
+    // The name sits on a leaderboard children read, so it goes through the
+    // same filter the word list does.
+    const bad = nameProblem(name);
+    if (bad) {
+      toast(bad === 'nonsense' ? 'Zkus prosím jméno z písmen 🙂'
+          : bad === 'long' ? 'Jméno může mít nejvýš 14 znaků.'
+          : 'Tohle jméno použít nejde — zkus prosím jiné 🙂', 3000);
+      input.focus();
+      input.select();
+      return;
+    }
     // Already a profile on this device: nothing to check, it is theirs.
     if (root.players[name]) {
       root.players[name].lastPlayed = Date.now();

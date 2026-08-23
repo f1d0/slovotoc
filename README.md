@@ -59,8 +59,9 @@ web/                     the game — deployed as-is, no build
   js/leaderboard.js      Supabase REST client (fails soft when offline)
   sw.js                  service worker: network-first code, cache-first art
   data/levels.json       240 pre-generated levels
+  js/wordfilter.js       the kid-safe filter, shared with tools/
 tools/                   offline generation (Node, run by hand)
-  wordfilter.mjs         kid-safe filter + Czech letter rules
+  wordfilter.mjs         re-exports web/js/wordfilter.js — one list, not two
   extract-wikt-lemmas.mjs  dictionary headwords from Wiktionary
   generate-levels.mjs    picks words, builds crosswords, writes levels.json
   layout.mjs             the crossword layout algorithm
@@ -126,6 +127,11 @@ actually in this game:
 | no canvas, no audio | confetti threw and took the level-advance timer with it |
 | a save captured mid-completion | reopened to a full crossword that never finished |
 
+`tests/pin.mjs` covers the sign-in flow — locked names, wrong PINs, the hint
+appearing only after a mistake, a taken name being refused — and the name
+filter. `tests/inapp.mjs` checks the Messenger warning appears there and
+nowhere else.
+
 `tests/all-levels.mjs` plays every level in the game to the end, submitting
 only the bare spellings a player can actually produce on the wheel. It is the
 answer to "is any level unwinnable" — run it after regenerating levels, along
@@ -179,7 +185,15 @@ a device: the same name and PIN work in any browser, on any phone, which was
 the whole point.
 
 Names with no PIN keep working exactly as before, so nobody already playing
-is locked out. The game offers the lock once, from level three.
+is locked out. The game offers the lock as soon as somebody claims an
+unlocked name, and otherwise once they have finished a few levels.
+
+Player names go through the same kid-safe filter the word list does — the
+name is on a board children read. The name is flattened first (diacritics
+folded, separators dropped, digit-for-letter swaps undone, repeated letters
+collapsed) so `K0k0t` and `k.o.k.o.t` are caught along with the plain
+spelling. This runs in the browser, so it stops someone picking a rude name
+rather than someone determined to force one through.
 
 ## Licences
 

@@ -1,6 +1,6 @@
 // Slovotoč service worker – cache-first for same-origin assets so the game
 // works offline after the first visit.
-const CACHE = 'slovotoc-v33';
+const CACHE = 'slovotoc-v34';
 const CORE = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const CORE = [
   './js/wheel.js',
   './js/grid.js',
   './js/state.js',
+  './js/wordfilter.js',
   './js/leaderboard.js',
   './js/audio.js',
   './js/confetti.js',
