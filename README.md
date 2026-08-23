@@ -80,8 +80,12 @@ permissive, so ordinary Czech is accepted even when it is not a headword —
 the accept pool merges a hunspell-derived form list with the inflection
 tables Wiktionary publishes, because the form list alone had gaps (the whole
 paradigm of *osa* was missing bar the nominative, so OSE was refused in all
-twelve levels it fits). `tools/expand-bonus.mjs` rebuilds those lists without
-touching a single crossword.
+twelve levels it fits). The list also carried no `-é`/`-á` form for 76% of
+its adjectives, so `zelný` was accepted and `zelné` was not; those are
+derived from the regular hard-adjective pattern instead — minus the
+nominative plural, which palatalises the stem and cannot be derived safely.
+`tools/expand-bonus.mjs` rebuilds those lists without touching a single
+crossword.
 
 ## Running it locally
 

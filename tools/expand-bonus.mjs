@@ -49,6 +49,28 @@ for (const line of readFileSync(KAIKKI, 'utf8').split('\n')) {
 }
 console.error(`pool: ${fromList} from the word list + ${added} new from Wiktionary = ${pool.size}`);
 
+// ---- pool 3: adjective endings the word list simply does not carry
+// 76% of the -ý adjectives in the list have no -é or -á form, which is how
+// "zelné" came to be refused while "zelný" was accepted. The hard adjective
+// pattern is regular enough to derive, so it is derived.
+//
+// Deliberately omitted: the nominative plural -í, because it palatalises the
+// stem (český → čeští, drahý → drazí) and a naive "eskí" would be wrong.
+// Soft adjectives in -í are left alone too; their pattern is different.
+const ADJ_ENDINGS = ['á', 'é', 'ého', 'ému', 'ém', 'ým', 'ých', 'ými', 'ou'];
+let derived = 0;
+for (const w of [...pool]) {
+  if (!/^[a-záčďéěíňóřšťúůýž]{4,}ý$/.test(w)) continue;
+  const stem = w.slice(0, -1);
+  for (const end of ADJ_ENDINGS) {
+    const form = stem + end;
+    if (!isPlayable(form) || pool.has(form)) continue;
+    pool.add(form);
+    derived++;
+  }
+}
+console.error(`+ ${derived} adjective forms derived from the regular pattern = ${pool.size}`);
+
 // index by folded form so a level's letters can be matched quickly
 const byBare = new Map();
 for (const w of pool) {
