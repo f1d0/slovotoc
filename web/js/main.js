@@ -1388,16 +1388,21 @@ function showPlayerPicker(intro = false, editing = false) {
     btn.textContent = 'Hledám…';
     btn.disabled = true;
     let status = null;
-    try { status = await nameStatus(name); } catch { /* offline */ }
+    let offline = false;
+    try { status = await nameStatus(name); } catch { offline = true; }
     btn.textContent = label;
     btn.disabled = false;
 
-    // Offline, or the migration has not been run: behave exactly as before.
+    // Already known to be unreachable — asking a second time would just make
+    // the player wait through another timeout before the game starts.
+    if (offline) return createPlayer(name);
+
+    // Reachable, but the migration has not been run yet: the old path.
     if (status === null) {
       try {
         const row = await fetchPlayer(name);
         if (row && (row.levels ?? 0) > 0) return adoptPlayer(row);
-      } catch { /* offline – fresh profile below */ }
+      } catch { /* fresh profile below */ }
       return createPlayer(name);
     }
     if (!status.taken) return createPlayer(name);

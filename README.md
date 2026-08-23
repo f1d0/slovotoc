@@ -101,6 +101,7 @@ while developing.
 ```bash
 npm run test:data      # structural checks on levels.json, no browser
 npm run test:edge      # ten ways to break the game, in a real browser
+npm run test:pin       # the sign-in flow, against a stubbed database
 npm run test:levels    # play all 240 levels to the end (~10 min)
 ```
 
@@ -158,7 +159,27 @@ email address. Score is the highest level ever reached, so starting over
 doesn't cost you your place. Every call has a timeout and falls back to local
 data, so the game stays playable when Supabase is asleep or unreachable.
 
-Table setup: [`docs/leaderboard.sql`](docs/leaderboard.sql).
+Table setup: [`docs/leaderboard.sql`](docs/leaderboard.sql), then
+[`docs/leaderboard-pin.sql`](docs/leaderboard-pin.sql).
+
+### Locking a name
+
+A player can lock their name with a four-digit PIN, which is what stops
+somebody typing your name and playing as you. **The check runs in Postgres,
+not in the browser** — the anon key ships in the game's source, so a check in
+JavaScript would be a suggestion rather than a lock. Direct writes are
+revoked from `anon` entirely and all writes go through `save_score()`, which
+verifies the PIN server-side. Five wrong tries lock the name for fifteen
+minutes.
+
+Four digits rather than an email or a social login, because the children this
+was built for are not old enough to have either — Google will not let an
+under-16 in the Czech Republic create an account at all. Nothing is bound to
+a device: the same name and PIN work in any browser, on any phone, which was
+the whole point.
+
+Names with no PIN keep working exactly as before, so nobody already playing
+is locked out. The game offers the lock once, from level three.
 
 ## Licences
 
