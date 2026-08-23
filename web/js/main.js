@@ -1086,8 +1086,10 @@ function showRules(back) {
 
 // Copies a player's progress from the shared board onto this device, so the
 // same person can carry on from a different phone or browser.
-function adoptPlayer(row) {
+function adoptPlayer(row, pin = null) {
   const p = newPlayer(row.name, cleanAvatar(row.avatar));
+  p.pin = pin;                 // remembered so it is typed once per device
+  p.pinAsked = pin != null;
   p.levelIndex = Math.min(row.levels ?? 0, LEVELS.length - 1);
   p.best = row.levels ?? 0;
   p.coins = row.coins ?? p.coins;
@@ -1124,6 +1126,112 @@ async function fillRemotePlayers() {
   } catch {
     box.innerHTML = '';
   }
+}
+
+// ---------- signing in to a name ----------
+
+const PIN_WHY = `
+  <h2>❓ Proč PIN?</h2>
+  <p>Jméno je ve Slovotoči tvoje identita — pod ním ti na žebříčku sedí
+     úrovně, hvězdy i bonusová slova. Bez zámku by stačilo, aby ho někdo
+     napsal, a hrál by za tebe.</p>
+  <p><b>Čtyři číslice</b> proto, že nechceme e-mail ani heslo. E-mail děti
+     nemají a přihlašování přes Google jim ho vůbec nedovolí založit.
+     Čtyři číslice si zapamatuje každý a fungují na jakémkoli zařízení —
+     na mobilu, na tabletu, v jiném prohlížeči. Nic se neváže na telefon.</p>
+  <p class="hint-note">PIN nikam neposíláme a nikde se nezobrazuje —
+     v databázi je z něj jen otisk, ze kterého se původní číslice
+     nedají zpětně zjistit.</p>
+  <p style="font-size:13px;opacity:0.8">Zapomenutý PIN umí resetovat jen
+     Filip. Proto si k němu můžeš uložit vlastní nápovědu — ta se ukáže,
+     až se spleteš.</p>`;
+
+function showPinWhy(back) {
+  showOverlay(PIN_WHY + '<button class="big-btn" id="ov-back">Rozumím</button>');
+  $('#ov-back').onclick = back;
+}
+
+function pinRow(id) {
+  return `<input id="${id}" type="text" inputmode="numeric" pattern="[0-9]*"
+            maxlength="4" class="pin-input" placeholder="••••" autocomplete="off" />`;
+}
+
+function createPlayer(name) {
+  const used = new Set(Object.values(root.players).map(p => p.avatar));
+  const free = AVATARS.filter(a => !used.has(a));
+  const pool = free.length ? free : AVATARS;
+  const avatar = pool[Math.floor(Math.random() * pool.length)];
+  root.players[name] = newPlayer(name, avatar);
+  claimLegacy(root, root.players[name]);
+  root.players[name].lastPlayed = Date.now();
+  startAs(name);
+}
+
+// The name is locked. Only the PIN gets you in.
+function askPin(name, status, back) {
+  showOverlay(`
+    <h2>🔒 ${esc(name)}</h2>
+    <p>Tohle jméno je zamčené PINem. Zadej ho a pokračuj tam, kde jsi
+       skončil${status?.levels ? ` — úroveň ${status.levels + 1}` : ''}.</p>
+    ${pinRow('pin-in')}
+    <p id="pin-msg" class="hint-note hidden"></p>
+    <button class="big-btn" id="pin-go">Pokračovat</button>
+    <button class="ghost-btn" id="pin-other">Zvolit jiné jméno</button>
+    <button class="link-btn" id="pin-why">❓ Proč PIN?</button>
+  `);
+  const inp = $('#pin-in');
+  const msg = $('#pin-msg');
+  inp.focus();
+  $('#pin-other').onclick = back;
+  $('#pin-why').onclick = () => showPinWhy(() => askPin(name, status, back));
+  const submit = async () => {
+    const pin = inp.value.trim();
+    if (!/^[0-9]{4}$/.test(pin)) { show('PIN má čtyři číslice.'); return; }
+    const btn = $('#pin-go');
+    btn.disabled = true; btn.textContent = 'Ověřuji…';
+    let r = null;
+    try { r = await signIn(name, pin); } catch { /* offline */ }
+    btn.disabled = false; btn.textContent = 'Pokračovat';
+    if (!r) { show('Nejsi online — zkus to prosím znovu.'); return; }
+    if (r.reason === 'blocked') {
+      show('Moc chybných pokusů. Zkus to prosím za čtvrt hodiny.' +
+           (r.hint ? ` Nápověda: „${esc(r.hint)}"` : ''));
+      return;
+    }
+    if (!r.ok) {
+      show('PIN nesedí.' + (r.hint ? ` Tvoje nápověda: „${esc(r.hint)}"` : ''));
+      inp.value = '';
+      inp.focus();
+      return;
+    }
+    adoptPlayer({ name, avatar: r.avatar, levels: r.levels, bonus: r.bonus,
+                  coins: r.coins, stars: r.stars, streak: r.streak }, pin);
+  };
+  function show(t) { msg.innerHTML = t; msg.classList.remove('hidden'); }
+  $('#pin-go').onclick = submit;
+  inp.onkeydown = e => { if (e.key === 'Enter') submit(); };
+}
+
+// The name is taken but nobody has locked it. Could be them on a new
+// device, could be a newcomer who picked a name in use — the game cannot
+// tell, so it asks rather than silently handing over someone's progress.
+function askIsItYou(name, status, back) {
+  showOverlay(`
+    <h2>Jméno „${esc(name)}" už někdo má</h2>
+    <p>Na žebříčku je hráč tohoto jména a je na úrovni
+       <b>${(status.levels ?? 0) + 1}</b>.</p>
+    <button class="big-btn" id="iy-yes">To jsem já — pokračovat</button>
+    <button class="ghost-btn" id="iy-no">To nejsem já — zvolím jiné jméno</button>
+    <p class="hint-note">Až budeš uvnitř, nabídneme ti zamknout jméno PINem,
+       aby se příště nikdo takhle nemusel rozhodovat.</p>
+  `);
+  $('#iy-no').onclick = back;
+  $('#iy-yes').onclick = async () => {
+    let row = null;
+    try { row = await fetchPlayer(name); } catch { /* offline */ }
+    if (row) adoptPlayer(row);
+    else createPlayer(name);
+  };
 }
 
 // Deleting a player is three deliberate taps – Upravit, then ✕, then confirm.
@@ -1203,29 +1311,33 @@ function showPlayerPicker(intro = false, editing = false) {
   const go = async () => {
     const name = input.value.trim();
     if (!name) { input.focus(); return; }
-    // Typing a name that already exists on the shared board continues that
-    // player rather than starting a second, empty profile with the same name.
-    if (!root.players[name]) {
-      const btn = $('#np-go');
-      const label = btn.textContent;
-      btn.textContent = 'Hledám…';
-      btn.disabled = true;
+    // Already a profile on this device: nothing to check, it is theirs.
+    if (root.players[name]) {
+      root.players[name].lastPlayed = Date.now();
+      return startAs(name);
+    }
+    const btn = $('#np-go');
+    const label = btn.textContent;
+    btn.textContent = 'Hledám…';
+    btn.disabled = true;
+    let status = null;
+    try { status = await nameStatus(name); } catch { /* offline */ }
+    btn.textContent = label;
+    btn.disabled = false;
+
+    // Offline, or the migration has not been run: behave exactly as before.
+    if (status === null) {
       try {
         const row = await fetchPlayer(name);
         if (row && (row.levels ?? 0) > 0) return adoptPlayer(row);
-      } catch { /* offline – start a fresh profile below */ }
-      btn.textContent = label;
-      btn.disabled = false;
+      } catch { /* offline – fresh profile below */ }
+      return createPlayer(name);
     }
-    if (!root.players[name]) {
-      const used = new Set(Object.values(root.players).map(p => p.avatar));
-      const free = AVATARS.filter(a => !used.has(a));
-      const avatar = (free.length ? free : AVATARS)[Math.floor(Math.random() * (free.length ? free.length : AVATARS.length))];
-      root.players[name] = newPlayer(name, avatar);
-      claimLegacy(root, root.players[name]);
-    }
-    root.players[name].lastPlayed = Date.now();
-    startAs(name);
+    if (!status.taken) return createPlayer(name);
+    if (status.locked) return askPin(name, status, () => showPlayerPicker(intro, editing));
+    // Taken but not locked yet: it may be them coming back on a new device,
+    // or a newcomer who picked a name already in use. Only they can say.
+    return askIsItYou(name, status, () => showPlayerPicker(intro, editing));
   };
   $('#np-go').onclick = go;
   input.onkeydown = e => { if (e.key === 'Enter') go(); };
