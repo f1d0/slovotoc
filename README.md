@@ -212,6 +212,24 @@ npm run levels                        # → web/data/levels.json
 npm test
 ```
 
+`tools/add-words.mjs` is what you actually run when somebody reports a word
+the game should have taken. It adds the hand-curated list in
+[`tools/extra-words.txt`](tools/extra-words.txt) to every level whose wheel
+can spell it, needs no dictionaries and touches nothing but the bonus lists —
+`npm run words`, seconds, no crossword disturbed.
+
+That list exists because of what the two big sources do and do not cover.
+Between them they handle ordinary Czech well, dialect included — *šufánek*,
+*erteple*, *škopek* and *cyp* are all in there, and 97% of the thousand
+commonest word forms in the language. What they miss is the regional tail
+that never made it into a national dictionary: *lokše* is absent because the
+Institute of the Czech Language says plainly that the word is not in the
+explanatory dictionaries and its gender is still unsettled, and *kolec* (a
+barrow, around Strakonice) is absent for the same reason. No bigger
+dictionary fixes that, because the words are not in any dictionary. A list
+somebody maintains by hand is the right tool, and it is deliberately
+bonus-words-only: nothing in it can become a crossword answer.
+
 `tools/purge-words.mjs` is the surgical alternative: when the kid-safe filter
 gains a rule, it strips the newly-banned words and relays *only* the affected
 levels, leaving everyone's saved progress in the other levels intact.

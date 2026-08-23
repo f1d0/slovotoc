@@ -18,6 +18,7 @@ import { isPlayable } from './wordfilter.mjs';
 const LEVELS = new URL('../web/data/levels.json', import.meta.url).pathname;
 const WORDLIST = process.env.WORDLIST ?? '/workspace/cwl/CZ-wordlist';
 const KAIKKI = process.env.KAIKKI ?? '/workspace/kaikki-cs.jsonl';
+const EXTRA = new URL('./extra-words.txt', import.meta.url).pathname;
 
 const FOLD = { 'á':'a','č':'c','ď':'d','é':'e','ě':'e','í':'i','ň':'n','ó':'o','ř':'r','š':'s','ť':'t','ú':'u','ů':'u','ý':'y','ž':'z' };
 const fold = w => [...w].map(c => FOLD[c] ?? c).join('');
@@ -70,6 +71,16 @@ for (const w of [...pool]) {
   }
 }
 console.error(`+ ${derived} adjective forms derived from the regular pattern = ${pool.size}`);
+
+// ---- pool 4: the hand-curated list of words players reported as missing
+// Regional words that no national dictionary carries. Merged here as well as
+// in add-words.mjs, so a full regeneration cannot quietly drop them again.
+let hand = 0;
+for (const line of readFileSync(EXTRA, 'utf8').split('\n')) {
+  const w = line.split('#')[0].trim().toLowerCase();
+  if (w && isPlayable(w) && !pool.has(w)) { pool.add(w); hand++; }
+}
+console.error(`+ ${hand} hand-added words from extra-words.txt = ${pool.size}`);
 
 // index by folded form so a level's letters can be matched quickly
 const byBare = new Map();

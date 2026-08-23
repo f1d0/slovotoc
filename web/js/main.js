@@ -646,10 +646,15 @@ function coinSvg() {
   return '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#ffc93c" stroke="#e6a817" stroke-width="1.6"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="900" fill="#8a5a00">S</text></svg>';
 }
 
-function showOverlay(html) {
-  els.overlayCard.innerHTML = html;
+// `close` puts an ✕ in the corner. Only for cards you are allowed to walk
+// away from — the PIN prompt and the level-complete screen deliberately have
+// no way out but their own buttons.
+function showOverlay(html, close = null) {
+  els.overlayCard.innerHTML =
+    (close ? '<button class="card-x" id="ov-x" aria-label="Zavřít">✕</button>' : '') + html;
   els.overlay.classList.remove('hidden');
   els.overlay.style.pointerEvents = 'auto';
+  if (close) $('#ov-x').onclick = close;
 }
 function hideOverlay() {
   els.overlay.classList.add('hidden');
@@ -776,7 +781,7 @@ function showNews(back) {
         <ul>${n.items.map(t => `<li>${t}</li>`).join('')}</ul>
       </div>`).join('')}
     <button class="big-btn" id="ov-back">Rozumím</button>
-  `);
+  `, back);
   markNewsRead();
   $('#ov-back').onclick = back;
 }
@@ -1128,7 +1133,7 @@ function showPlayerCard(name) {
     <div class="stat-grid">${tiles.map(([ic, label, val]) => `
       <div class="stat"><em>${ic}</em><b>${val}</b><span>${label}</span></div>`).join('')}</div>
     <button class="big-btn" id="ov-back">Zpět na žebříček</button>
-  `);
+  `, showLeaderboard);
   $('#ov-back').onclick = showLeaderboard;
 }
 
@@ -1143,13 +1148,13 @@ async function showLeaderboard() {
         : `Stejná pro všechny · +${DAILY_REWARD} mincí a 💡 zdarma`}</span></div>
     </button>
     <div id="board-box"><p style="opacity:0.7">Načítám žebříček…</p></div>
-    <button class="big-btn" id="ov-switch">Vyměnit hráče</button>
-    <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
+    <button class="big-btn" id="ov-close">Zpět ke hře</button>
+    <button class="ghost-btn" id="ov-switch">Vyměnit hráče</button>
     <button class="ghost-btn ${newsUnread() ? 'dot' : ''}" id="ov-news">✨ Co je nového</button>
     <button class="ghost-btn" id="ov-about">ℹ️ O hře a fotkách</button>
     <button class="ghost-btn" id="ov-pin">${player?.pin ? '🔒 Změnit PIN' : '🔒 Zamknout jméno PINem'}</button>
     ${INSTALL_BTN()}
-  `);
+  `, hideOverlay);
   $('#ov-switch').onclick = () => showPlayerPicker();
   $('#ov-close').onclick = hideOverlay;
   $('#ov-about').onclick = showAbout;
@@ -1183,7 +1188,7 @@ async function showAbout() {
     <h2 style="margin-top:16px;font-size:17px">📷 Fotografie míst</h2>
     <div id="credits-box"><p style="opacity:0.7">Načítám…</p></div>
     <button class="big-btn" id="ov-close">Zpět</button>
-  `);
+  `, hideOverlay);
   $('#ov-close').onclick = hideOverlay;
   $('#ov-rules').onclick = () => showRules(showAbout);
   try {
