@@ -751,6 +751,7 @@ function levelComplete() {
     $('#ov-next').onclick = () => {
       hideOverlay();
       loadLevel();
+      maybeNudgePin();   // once, and only once there is progress worth locking
     };
   }, 900);
 }
@@ -861,11 +862,13 @@ async function showLeaderboard() {
     <button class="big-btn" id="ov-switch">Vyměnit hráče</button>
     <button class="ghost-btn" id="ov-close">Zpět ke hře</button>
     <button class="ghost-btn" id="ov-about">ℹ️ O hře a fotkách</button>
+    <button class="ghost-btn" id="ov-pin">${player?.pin ? '🔒 Změnit PIN' : '🔒 Zamknout jméno PINem'}</button>
     ${INSTALL_BTN()}
   `);
   $('#ov-switch').onclick = () => showPlayerPicker();
   $('#ov-close').onclick = hideOverlay;
   $('#ov-about').onclick = showAbout;
+  $('#ov-pin').onclick = () => showSetPin({ back: showLeaderboard });
   wireInstall(showLeaderboard);
   $('#ov-daily').onclick = () => {
     if (dailyDone()) { toast('Dnešní výzvu už máš hotovou 🎉 Vrať se zítra!'); return; }
@@ -1126,6 +1129,70 @@ async function fillRemotePlayers() {
   } catch {
     box.innerHTML = '';
   }
+}
+
+// ---------- locking your own name ----------
+
+// Offered once, after the player has something worth protecting. Nagging
+// somebody on level 1 to secure an empty profile would just be noise.
+const PIN_NUDGE_LEVEL = 3;
+
+function showSetPin({ back, nudge = false }) {
+  const name = player.name;
+  showOverlay(`
+    <h2>${nudge ? '🔒 Zamkni si jméno' : '🔒 Nastavit PIN'}</h2>
+    ${nudge ? `<p><b>${esc(name)}</b>, na žebříčku ti přibývají úrovně,
+        hvězdy a bonusová slova. Zatím ale stačí, aby tvoje jméno někdo
+        napsal, a hraje za tebe.</p>` : ''}
+    <p>Vyber si <b>čtyři číslice</b>. Budeš je potřebovat, až se přihlásíš
+       na jiném zařízení — na mobilu, na tabletu, v jiném prohlížeči.</p>
+    ${pinRow('sp-pin')}
+    <p style="font-size:13px;opacity:0.85;margin-top:10px">Nápověda pro
+       případ, že ho zapomeneš (nepiš do ní samotný PIN):</p>
+    <input id="sp-hint" class="pin-hint-input" maxlength="40" autocomplete="off"
+           placeholder="např. Bájkovo číslo, den narozenin…" />
+    <p id="sp-msg" class="hint-note hidden"></p>
+    <button class="big-btn" id="sp-go">Zamknout jméno</button>
+    <button class="ghost-btn" id="sp-later">${nudge ? 'Teď ne, připomeň mi to' : 'Zpět'}</button>
+    <button class="link-btn" id="sp-why">❓ Proč PIN a ne heslo nebo e-mail?</button>
+  `);
+  const pin = $('#sp-pin');
+  const hint = $('#sp-hint');
+  const msg = $('#sp-msg');
+  const show = t => { msg.textContent = t; msg.classList.remove('hidden'); };
+  pin.focus();
+  $('#sp-why').onclick = () => showPinWhy(() => showSetPin({ back, nudge }));
+  $('#sp-later').onclick = () => {
+    // asked once per level milestone, not on every visit
+    player.pinAsked = true;
+    saveRoot(root);
+    back();
+  };
+  $('#sp-go').onclick = async () => {
+    const v = pin.value.trim();
+    if (!/^[0-9]{4}$/.test(v)) { show('PIN musí být přesně čtyři číslice.'); return; }
+    if (hint.value.includes(v)) { show('Nápověda nesmí obsahovat samotný PIN 🙂'); return; }
+    const btn = $('#sp-go');
+    btn.disabled = true; btn.textContent = 'Ukládám…';
+    let ok = false;
+    try { ok = await setPin(name, player.pin ?? null, v, hint.value.trim()); }
+    catch { ok = false; }
+    btn.disabled = false; btn.textContent = 'Zamknout jméno';
+    if (!ok) { show('Nepovedlo se — nejsi online, nebo zámek ještě není zapnutý.'); return; }
+    player.pin = v;
+    player.pinAsked = true;
+    saveRoot(root);
+    toast(`🔒 Jméno ${name} je zamčené`, 2600);
+    back();
+  };
+}
+
+// Shown once the player has a few levels behind them and no PIN yet.
+function maybeNudgePin() {
+  if (!player || player.pin || player.pinAsked) return;
+  if (bestOf(player) < PIN_NUDGE_LEVEL) return;
+  if (pinSupported() === false) return;   // migration not run yet
+  showSetPin({ nudge: true, back: hideOverlay });
 }
 
 // ---------- signing in to a name ----------
