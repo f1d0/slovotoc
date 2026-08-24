@@ -178,12 +178,38 @@ grant insert (device_id, name, avatar, levels, bonus, coins, stars, streak, upda
 grant update (device_id, name, avatar, levels, bonus, coins, stars, streak, updated_at)
   on public.leaderboard to anon;
 
+-- "with check (true)" used to let anyone insert a brand-new row for any
+-- not-yet-used name with whatever stats they liked — a way to plant a fake
+-- profile (and a fake avatar) before the real player ever shows up, which
+-- the app's "is this you?" prompt would then happily hand over. A genuinely
+-- old cached client only ever needs this path to create an empty starter
+-- row (on_conflict routes any *existing* name to "legacy update unlocked"
+-- below instead) — restricting the insert to a blank profile keeps the
+-- compatibility fallback working without leaving anything worth stealing.
 drop policy if exists "legacy insert" on public.leaderboard;
 create policy "legacy insert" on public.leaderboard
-  for insert to anon with check (true);
+  for insert to anon with check (
+    levels = 0 and bonus = 0 and coins = 0
+    and coalesce(stars, 0) = 0 and coalesce(streak, 0) = 0
+    and pin_hash is null and pin_hint is null
+  );
 
+-- leaderboard_keep_best_trg (docs/leaderboard-stats.sql) stops levels/bonus/
+-- stars/streak/clean from ever going down, no matter which path writes them
+-- — but coins are deliberately exempt from that trigger (see its comment:
+-- last write wins, so spending them on one phone is not undone by syncing
+-- from another). That makes coins the one number this direct-write fallback
+-- can still be used to grief: anyone can send an update for any unlocked
+-- name that zeroes its coins out from under the real player. The subquery
+-- below reads the row's coin balance as it stood before this update and
+-- refuses to let this path ever lower it — save_score() (which already
+-- carries a verified PIN once a name is locked) is unaffected, since it
+-- runs as security definer and is not subject to this policy.
 drop policy if exists "legacy update unlocked" on public.leaderboard;
 create policy "legacy update unlocked" on public.leaderboard
   for update to anon
   using (pin_hash is null)
-  with check (pin_hash is null);
+  with check (
+    pin_hash is null
+    and coins >= (select l.coins from public.leaderboard l where l.id = leaderboard.id)
+  );

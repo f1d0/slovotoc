@@ -604,7 +604,7 @@ function toggleHammer() {
 }
 
 els.grid.addEventListener('click', e => {
-  if (!hammerArmed) return;
+  if (!hammerArmed || busy) return;
   const cell = e.target.closest('.cell.pickable');
   if (!cell) return;
   hammerArmed = false;
@@ -918,6 +918,8 @@ function showAllDone() {
     fresh.stars = player.stars ?? {};
     fresh.daily = player.daily ?? null;
     fresh.coins = player.coins;
+    fresh.pin = player.pin;
+    fresh.pinAsked = player.pinAsked;
     root.players[player.name] = fresh;
     player = fresh;
     saveRoot(root);
@@ -1266,6 +1268,7 @@ function startAs(name, { recover = true } = {}) {
     loadLevel();
     for (const k of grid.unrevealedKeys()) grid.reveal(k, { silent: true });
     player.levelIndex = LEVELS.length;
+    saveRoot(root);
     showAllDone();
   } else {
     loadLevel(true);
@@ -1511,9 +1514,10 @@ function maybeWarnInApp() {
 
 // ---------- locking your own name ----------
 
-// Offered once, after the player has something worth protecting. Nagging
-// somebody on level 1 to secure an empty profile would just be noise.
-const PIN_NUDGE_LEVEL = 3;
+// Offered once, after the player has finished their first level — early
+// enough that a name isn't sitting unlocked (and claimable by anyone else)
+// for long, but not before there is anything worth protecting at all.
+const PIN_NUDGE_LEVEL = 1;
 
 function showSetPin({ back, nudge = false }) {
   const name = player.name;
